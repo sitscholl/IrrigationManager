@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -29,7 +29,7 @@ class Irrigation(Base):
 
     id = Column(Integer, primary_key=True)
     field_id = Column(Integer, ForeignKey('fields.id'), nullable=False)
-    date = Column(DateTime, nullable=False)
+    date = Column(Date, nullable=False)
     method = Column(String, nullable=False)
     amount = Column(Float, default=100)
 

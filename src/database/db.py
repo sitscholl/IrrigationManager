@@ -1,3 +1,4 @@
+import datetime
 import logging
 from contextlib import contextmanager
 from typing import Generator, List, Optional
@@ -9,8 +10,8 @@ from . import models
 
 logger = logging.getLogger(__name__)
 
-class IrrigDB:
 
+class IrrigDB:
     def __init__(self, engine_url: str = 'sqlite:///database.db', **engine_kwargs) -> None:
         """
         Create a database engine and initialise ORM metadata.
@@ -40,11 +41,30 @@ class IrrigDB:
         finally:
             session.close()
 
+    def _get_field_by_name(self, session: Session, name: str) -> Optional[models.Field]:
+        return (
+            session.query(models.Field)
+            .filter(models.Field.name == name)
+            .one_or_none()
+        )
+
+    def _get_irrigation_event(
+        self, session: Session, field_id: int, date: datetime.date
+    ) -> Optional[models.Irrigation]:
+        return (
+            session.query(models.Irrigation)
+            .filter(
+                models.Irrigation.field_id == field_id,
+                models.Irrigation.date == date,
+            )
+            .one_or_none()
+        )
+
     def get_all_fields(self) -> List[str]:
         """
         Return the distinct field names sorted alphabetically.
         """
-        with self._session_factory() as session:
+        with self.session_scope() as session:
             names = (
                 session.query(models.Field.name)
                 .distinct()
@@ -57,9 +77,8 @@ class IrrigDB:
         """
         Retrieve a field by its unique name.
         """
-        with self._session_factory() as session:
-            field = session.query(models.Field).filter(models.Field.name == name).one_or_none()
-        return field
+        with self.session_scope() as session:
+            return self._get_field_by_name(session, name)
 
     def add_field(
         self,
@@ -74,11 +93,7 @@ class IrrigDB:
         """
         try:
             with self.session_scope() as session:
-                field = (
-                    session.query(models.Field)
-                    .filter(models.Field.name == name)
-                    .one_or_none()
-                )
+                field = self._get_field_by_name(session, name)
 
                 if field is None:
                     logger.debug("Adding new field %s", name)
@@ -99,8 +114,89 @@ class IrrigDB:
 
                 session.flush()  # ensure primary key is populated for new records
                 return field
-        except Exception as exc:
-            logger.exception("Failed to persist field %s: %s", name, exc)
+        except Exception:
+            logger.exception("Failed to persist field %s", name)
+            return None
+
+    def query_irrigation_event(
+        self, field_name: str, date: datetime.date
+    ) -> Optional[models.Irrigation]:
+        """
+        Retrieve an irrigation event by field name and date.
+        """
+        if isinstance(date, datetime.datetime):
+            raise NotImplementedError(
+                'Only datetime.date objects are allowed in irrigation database'
+            )
+
+        with self.session_scope() as session:
+            field = self._get_field_by_name(session, field_name)
+            if field is None:
+                logger.warning(
+                    "Field %s does not exist. Cannot query irrigation event",
+                    field_name,
+                )
+                return None
+
+            return self._get_irrigation_event(session, field.id, date)
+
+    def add_irrigation_event(
+        self,
+        field_name: str,
+        date: datetime.date,
+        method: str,
+        amount: float = 100,
+    ) -> Optional[models.Irrigation]:
+        """
+        Add a new irrigation event or update an existing one.
+        """
+        if isinstance(date, datetime.datetime):
+            raise NotImplementedError(
+                'Only datetime.date objects are allowed in irrigation database'
+            )
+
+        try:
+            with self.session_scope() as session:
+                field = self._get_field_by_name(session, field_name)
+                if field is None:
+                    logger.error(
+                        "Field %s does not exist. Cannot add irrigation event",
+                        field_name,
+                    )
+                    return None
+
+                event = self._get_irrigation_event(session, field.id, date)
+
+                if event is None:
+                    logger.debug(
+                        "Adding new irrigation event for field %s on %s",
+                        field_name,
+                        date,
+                    )
+                    event = models.Irrigation(
+                        field_id=field.id,
+                        date=date,
+                        method=method,
+                        amount=amount,
+                    )
+                    session.add(event)
+                else:
+                    logger.debug(
+                        "Updating irrigation event for field %s on %s",
+                        field_name,
+                        date,
+                    )
+                    event.method = method
+                    event.amount = amount
+
+                session.flush()  # ensure primary key is populated for new records
+                return event
+        except Exception:
+            logger.exception(
+                "Failed to add irrigation event for field %s on %s",
+                field_name,
+                date,
+            )
             return None
 
     def close(self) -> None:
@@ -110,3 +206,48 @@ class IrrigDB:
         if self.engine:
             self.engine.dispose()
             logger.debug("Database engine disposed.")
+
+
+if __name__ == '__main__':
+    import logging.config
+
+    from ..config import load_config
+
+    config = load_config('config/config.yaml')
+    logging.config.dictConfig(config['logging'])
+
+    db = IrrigDB()
+
+    fields = {
+        'Field1': {'reference_station': 'a', 'soil_type': 'a', 'area_ha': 1},
+        'Field2': {'reference_station': 'b', 'soil_type': 'b', 'area_ha': 2},
+        'Field3': {'reference_station': 'c', 'soil_type': 'c', 'area_ha': 3},
+    }
+
+    for field_name in fields.keys():
+        db.add_field(
+            name=field_name,
+            **fields[field_name],
+        )
+
+    db.add_field(
+        name='Field3',
+        reference_station='d',
+        soil_type='d',
+        area_ha=4,
+    )
+
+    print(db.get_all_fields())
+    for field_name in fields.keys():
+        inst = db.query_field(field_name)
+        print(inst)
+        print(inst.reference_station)
+
+    db.add_irrigation_event(
+        field_name='Field1',
+        date=datetime.date.today(),
+        method='drip',
+    )
+
+    print(db.query_irrigation_event('Field1', datetime.date.today()))
+    db.close()
