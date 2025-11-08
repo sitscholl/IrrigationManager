@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
-import pandera as pa
+import pandera.pandas as pa
 import requests
 from pandera.errors import SchemaError
 
@@ -103,7 +103,37 @@ class MeteoHandler:
 
         response_data = response_data.set_index("datetime").sort_index()
         response_data["station_id"] = station_id
-        return response_data
+        return self._convert_solar_radiation_units(response_data)
+
+    def _convert_solar_radiation_units(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert solar radiation readings from W/m^2 to MJ/m^2 based on the sampling interval.
+        """
+        if "solar_radiation" not in df.columns or df["solar_radiation"].isna().all():
+            return df
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            logger.warning("Cannot convert solar radiation units because dataframe index is not datetime.")
+            return df
+
+        intervals = df.index.to_series().diff().dt.total_seconds()
+        positive_intervals = intervals[intervals > 0]
+
+        if positive_intervals.empty:
+            logger.warning("Unable to infer sampling interval for converting solar radiation units.")
+            return df
+
+        representative_interval = positive_intervals.median()
+        intervals = intervals.fillna(representative_interval).where(intervals > 0, representative_interval)
+
+        if intervals.isna().any() or (representative_interval is None) or representative_interval <= 0:
+            logger.warning("Invalid sampling interval encountered while converting solar radiation units.")
+            return df
+
+        mj_factor = intervals / 1_000_000  # W -> J then to MJ
+        converted_df = df.copy()
+        converted_df["solar_radiation"] = converted_df["solar_radiation"] * mj_factor
+        return converted_df
 
     def _fill_solar_radiation(
         self,
@@ -135,7 +165,7 @@ class MeteoHandler:
             fallback_df["solar_radiation"]
             .reindex(df.index)
             .interpolate(method="time", limit_direction="both")
-            .fillna(method="bfill")
+            .bfill()
         )
 
         if fallback_series.isna().all():
@@ -193,11 +223,12 @@ class MeteoHandler:
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from .config import load_config
+    from .resample import MeteoResampler
 
     config = load_config('config/config.yaml')
 
     handler = MeteoHandler(config)
-    data = handler.query('SBR', ['103'], datetime(2025, 10, 1), datetime(2025, 10, 2))
+    data = handler.query('SBR', ['103'], datetime(2025, 10, 1), datetime(2025, 10, 2), resampler = MeteoResampler(freq='D', min_count = 20))
 
     data['solar_radiation'].plot()
     print(data)
