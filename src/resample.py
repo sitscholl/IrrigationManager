@@ -6,7 +6,7 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 def get_mode(column: pd.Series):
-    return column.mode.iloc[0]
+    return column.mode().iloc[0]
 
 DEFAULT_RESAMPLING_CONFIG = {
     "tair_2m": "mean",                           # Temperature 2m
@@ -30,7 +30,7 @@ DEFAULT_RESAMPLING_CONFIG = {
 
 class MeteoResampler:
 
-    def __init__(self, freq = 'D', config: dict | None = None):
+    def __init__(self, freq = 'D', min_count = 1, config: dict | None = None):
         
         if config is None:
             config = DEFAULT_RESAMPLING_CONFIG
@@ -39,6 +39,7 @@ class MeteoResampler:
         
         self.freq = freq
         self.config = config
+        self.min_count = min_count
 
     def resample(self, meteo_data, default_aggfunc: str | Callable | None = None):
 
@@ -66,4 +67,7 @@ class MeteoResampler:
                 for col in extra_columns:
                     resample_colmap[col] = default_aggfunc
                 
-        return data_copy.resample(self.freq).agg({i:j for i,j in resample_colmap.items() if i in data_copy.columns})
+        counts = data_copy.resample(self.freq).count()
+        aggregations = data_copy.resample(self.freq).agg({i:j for i,j in resample_colmap.items() if i in data_copy.columns})
+
+        return aggregations.where(counts >= self.min_count).dropna(how = 'all')
