@@ -203,6 +203,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "pandas" },
     { name = "pandera", extra = ["pandas"] },
+    { name = "pyet" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "sqlalchemy" },
@@ -213,6 +214,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandera", extras = ["pandas"], specifier = ">=0.26.1" },
+    { name = "pyet", specifier = ">=1.4.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
@@ -579,6 +581,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pyet"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "xarray" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/42/8d494a63d807295d46d0af6272f285dd72093629c36ba68af098d04639f0/pyet-1.4.0.tar.gz", hash = "sha256:0386fea15ae382d506b2178dc4755661bd06a23e72c84b6b9edae8f5f12d9581", size = 30988, upload-time = "2025-09-02T21:54:15.114Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/43/90ac5c179d35046a5f22f48ffea8ca17f2f99c5ea6988373733eed665e52/pyet-1.4.0-py3-none-any.whl", hash = "sha256:db585b9416b72cb0c870af0ae455a5308fa9e09337f892d7d9023bce95655bee", size = 24134, upload-time = "2025-09-02T21:54:14.223Z" },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.2.5"
 source = { registry = "https://pypi.org/simple" }
@@ -751,4 +767,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+]
+
+[[package]]
+name = "xarray"
+version = "2025.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/ce/f5dd613ddd0b3f839c59e6c2fa20c62469bf671bf4c92a12b09dc0972326/xarray-2025.10.1.tar.gz", hash = "sha256:3c2b5ad7389825bd624ada5ff26b01ac54b1aae72e2fe0d724d81d40a2bf5785", size = 3058736, upload-time = "2025-10-07T20:25:56.708Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/78/4d6d68555a92cb97b4c192759c4ab585c5cb23490f64d4ddf12c66a3b051/xarray-2025.10.1-py3-none-any.whl", hash = "sha256:a4e699433b87a7fac340951bc36648645eeef72bdd915ff055ac2fd99865a73d", size = 1365202, upload-time = "2025-10-07T20:25:54.964Z" },
 ]
