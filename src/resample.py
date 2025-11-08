@@ -1,12 +1,12 @@
-from scipy.stats import mode
+import pandas as pd
 
 import logging
-from typing import str, Callable
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-def get_mode(column):
-    return mode(column, nan_policy='omit').mode[0]
+def get_mode(column: pd.Series):
+    return column.mode.iloc[0]
 
 DEFAULT_RESAMPLING_CONFIG = {
     "tair_2m": "mean",                           # Temperature 2m
@@ -35,7 +35,7 @@ class MeteoResampler:
         if config is None:
             config = DEFAULT_RESAMPLING_CONFIG
         else:
-            config = DEFAULT_RESAMPLING_CONFIG.update(config)
+            config = {**DEFAULT_RESAMPLING_CONFIG, **config}
         
         self.freq = freq
         self.config = config
@@ -43,15 +43,27 @@ class MeteoResampler:
     def resample(self, meteo_data, default_aggfunc: str | Callable | None = None):
 
         data_copy = meteo_data.copy()
-        resample_colmap = self.resample_colmap.copy()
+        resample_colmap = self.config.copy()
 
-        missing_columns = [col for col in data_copy.columns if col not in self.config]
+        missing_data_columns = [col for col in resample_colmap if col not in data_copy.columns]
+        if missing_data_columns:
+            logger.info(
+                "Columns configured for resampling are missing in the input data: %s",
+                missing_data_columns,
+            )
+            for col in missing_data_columns:
+                resample_colmap.pop(col, None)
 
-        if default_aggfunc is None:
-            logger.info(f"The following columns are missing from the resample_colmap: {missing_columns} and no default aggfunc specified. They are ignored from resampling")
-            data_copy.drop(missing_columns, axis = 1, inplace = True)
-        else:
-            for i in missing_columns:
-                resample_colmap[i] = default_aggfunc
+        extra_columns = [col for col in data_copy.columns if col not in resample_colmap]
+        if extra_columns:
+            if default_aggfunc is None:
+                logger.info(
+                    "Columns %s lack a resampling rule and no default aggfunc was provided; dropping them.",
+                    extra_columns,
+                )
+                data_copy.drop(columns=extra_columns, inplace=True)
+            else:
+                for col in extra_columns:
+                    resample_colmap[col] = default_aggfunc
                 
         return data_copy.resample(self.freq).agg({i:j for i,j in resample_colmap.items() if i in data_copy.columns})
