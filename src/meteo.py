@@ -1,89 +1,184 @@
-import pandas as pd
-import requests
-import pandera.pandas as pa
+from __future__ import annotations
 
-from datetime import datetime
 import logging
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Optional
+
+import pandas as pd
+import pandera as pa
+import requests
+from pandera.errors import SchemaError
 
 logger = logging.getLogger(__name__)
 
+
 class MeteoHandler:
     """Manager class to query meteo data from multiple fields/stations and transform returned data to a consistent schema"""
-    
-    def __init__(self, config, et0_calculator = None):
-        self.api_host = config['api']['host']
-        self.query_template = config['api']["query_template"]
+
+    def __init__(self, config: dict, et0_calculator: Optional[object] = None):
+        api_config = config["api"]
+        self.api_host = api_config["host"].rstrip("/")
+        self.query_template = api_config["query_template"].lstrip("/")
+
+        meteo_config = config.get("meteo", {})
+        self.radiation_fallback_provider = meteo_config.get("radiation_fallback_provider", "province")
+        self.radiation_fallback_station = meteo_config.get("radiation_fallback_station", "09700MS")
+        self.request_timeout = meteo_config.get("request_timeout", 10)
+
+        self.et0_calculator = et0_calculator
+        self._session = requests.Session()
 
     @property
     def output_schema(self) -> pa.DataFrameSchema:
         """
         Define the expected schema for meteorological data output.
-        
+
         Returns:
             pa.DataFrameSchema: Schema for validating SBR output data
         """
         return pa.DataFrameSchema(
             {
                 "station_id": pa.Column(str),
-
-                "tair_2m": pa.Column(float, nullable=True, required = False),
+                "tair_2m": pa.Column(float, nullable=True, required=False),
                 "relative_humidity": pa.Column(float, nullable=True, required=False),
                 "wind_speed": pa.Column(float, nullable=True, required=False),
-                "precipitation": pa.Column(float, nullable=True, required = False),  
-                "air_pressure": pa.Column(float, nullable = True, required = False),
-                "sun_duration": pa.Column(float, nullable = True, required = False),
-                "solar_radiation": pa.Column(float, nullable = True, required = False),
+                "precipitation": pa.Column(float, nullable=True, required=False),
+                "air_pressure": pa.Column(float, nullable=True, required=False),
+                "sun_duration": pa.Column(float, nullable=True, required=False),
+                "solar_radiation": pa.Column(float, nullable=True, required=False),
             },
             index=pa.Index(pd.DatetimeTZDtype(tz="UTC")),
-            strict=False  # Allow additional columns that might be added
+            strict=False,  # Allow additional columns that might be added
         )
 
-    def _validate(self, transformed_data: pd.DataFrame):
+    def _validate(self, transformed_data: pd.DataFrame) -> pd.DataFrame:
         return self.output_schema.validate(transformed_data)
 
+    def _build_url(
+        self,
+        provider: str,
+        station_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> str:
+        path = self.query_template.format(
+            provider=provider,
+            station_id=station_id,
+            start_date=start,
+            end_date=end,
+        ).lstrip("/")
+        return f"{self.api_host}/{path}"
+
     def _get_data(
-            self, 
-            provider: str, 
-            station_id: str, 
-            start: datetime, 
-            end: datetime, 
-        ):
-        url = self.api_host + "/" + self.query_template.format(provider = provider, station_id = station_id, start_date = start, end_date = end)
+        self,
+        provider: str,
+        station_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        url = self._build_url(provider, station_id, start, end)
         try:
-            response = requests.get(url)
+            response = self._session.get(url, timeout=self.request_timeout)
             response.raise_for_status()
+            payload = response.json()
 
-            response_data = pd.DataFrame(response.json()['data'])
-            response_data['datetime'] = pd.to_datetime(response_data['datetime'])
+            raw_data = payload.get("data", [])
+            if not raw_data:
+                logger.warning("No data returned for station %s (%s)", station_id, provider)
+                return pd.DataFrame()
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error in fetching data from {url}: {e}")
+            response_data = pd.DataFrame(raw_data)
+
+            if "datetime" not in response_data.columns:
+                logger.error("Missing 'datetime' column in response from %s", url)
+                return pd.DataFrame()
+
+            response_data["datetime"] = pd.to_datetime(response_data["datetime"], utc=True)
+
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.error("Error fetching data from %s: %s", url, exc)
             return pd.DataFrame()
-        
-        return response_data.set_index('datetime')
 
-    def query(self, provider: str, station_ids: list[str], start: datetime, end: datetime):
+        response_data = response_data.set_index("datetime").sort_index()
+        response_data["station_id"] = station_id
+        return response_data
 
-        data = []
+    def _fill_solar_radiation(
+        self,
+        df: pd.DataFrame,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        if "solar_radiation" in df.columns and df["solar_radiation"].notna().any():
+            return df
+
+        if not self.radiation_fallback_station:
+            return df
+
+        fallback_df = self._get_data(
+            self.radiation_fallback_provider,
+            self.radiation_fallback_station,
+            start,
+            end,
+        )
+
+        if fallback_df.empty or "solar_radiation" not in fallback_df.columns:
+            logger.warning(
+                "Unable to fetch fallback solar radiation data for station %s",
+                self.radiation_fallback_station,
+            )
+            return df
+
+        fallback_series = (
+            fallback_df["solar_radiation"]
+            .reindex(df.index)
+            .interpolate(method="time", limit_direction="both")
+            .fillna(method="bfill")
+        )
+
+        if fallback_series.isna().all():
+            logger.warning("Fallback solar radiation series is empty for station %s", self.radiation_fallback_station)
+            return df
+
+        df = df.copy()
+        df["solar_radiation"] = fallback_series
+        return df
+
+    def _empty_dataframe(self) -> pd.DataFrame:
+        column_names = list(self.output_schema.columns.keys())
+        empty_df = pd.DataFrame(columns=column_names)
+        empty_df.index = pd.DatetimeIndex([], tz="UTC")
+        return empty_df
+
+    def query(self, provider: str, station_ids: Sequence[str], start: datetime, end: datetime) -> pd.DataFrame:
+        if start >= end:
+            raise ValueError("start must be before end")
+
+        data_frames: list[pd.DataFrame] = []
         for station in station_ids:
-
             try:
                 df = self._get_data(provider, station, start, end)
 
-                if 'solar_radiation' not in df.columns:
-                    df_rad = self._get_data('province', "09700MS", start, end)
-                    df_rad = df_rad['solar_radiation'].reindex_like(df).interpolate(method = 'linear').bfill()
-                    df = df.join(df_rad, how='left')
+                if df.empty:
+                    logger.warning("No data returned for station %s", station)
+                    continue
+
+                df = self._fill_solar_radiation(df, start, end)
 
                 validated_df = self._validate(df)
-                data.append(validated_df)
-            except Exception as e:
-                logger.error(f"Error in fetching data for station {station}: {e}")
-                return pd.DataFrame()
+                data_frames.append(validated_df)
+            except SchemaError as exc:
+                logger.error("Schema validation failed for station %s: %s", station, exc)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.error("Unexpected error while fetching data for station %s: %s", station, exc)
 
-        return pd.concat(data, ignore_index = True)
+        if not data_frames:
+            return self._empty_dataframe()
 
-    def calculate_et0(self):
+        return pd.concat(data_frames).sort_index()
+
+    def calculate_et0(self, meteo_data: pd.DataFrame, **kwargs):
         """
         Use the et0 calculator and its method to calculate evapotranspiration from the meteodata
         """
@@ -96,7 +191,7 @@ if __name__ == '__main__':
     config = load_config('config/config.yaml')
 
     handler = MeteoHandler(config)
-    data = handler.query('SBR', ['103'], datetime(2025,10,1), datetime(2025,10,2))
+    data = handler.query('SBR', ['103'], datetime(2025, 10, 1), datetime(2025, 10, 2))
 
     data['solar_radiation'].plot()
     print(data)
