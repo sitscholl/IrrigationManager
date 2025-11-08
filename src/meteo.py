@@ -10,8 +10,9 @@ import pandera as pa
 import requests
 from pandera.errors import SchemaError
 
-logger = logging.getLogger(__name__)
+from .resample import MeteoResampler
 
+logger = logging.getLogger(__name__)
 
 class MeteoHandler:
     """Manager class to query meteo data from multiple fields/stations and transform returned data to a consistent schema"""
@@ -151,7 +152,8 @@ class MeteoHandler:
         empty_df.index = pd.DatetimeIndex([], tz="UTC")
         return empty_df
 
-    def query(self, provider: str, station_ids: Sequence[str], start: datetime, end: datetime) -> pd.DataFrame:
+    def query(self, provider: str, station_ids: Sequence[str], start: datetime, end: datetime, resampler: MeteoResampler | None = None) -> pd.DataFrame:
+        
         if start >= end:
             raise ValueError("start must be before end")
 
@@ -176,7 +178,11 @@ class MeteoHandler:
         if not data_frames:
             return self._empty_dataframe()
 
-        return pd.concat(data_frames).sort_index()
+        data = pd.concat(data_frames).sort_index()
+        if resampler is not None:
+            data = resampler.resample(data)
+
+        return data
 
     def calculate_et0(self, meteo_data: pd.DataFrame, **kwargs):
         """
