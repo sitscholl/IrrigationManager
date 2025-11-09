@@ -65,13 +65,13 @@ class IrrigDB:
         Return the distinct field names sorted alphabetically.
         """
         with self.session_scope() as session:
-            names = (
+            fields = (
                 session.query(models.Field.name)
                 .distinct()
                 .order_by(models.Field.name)
                 .all()
             )
-        return [name for (name,) in names]
+        return fields
 
     def query_field(self, name: str) -> Optional[models.Field]:
         """
