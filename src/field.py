@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from database.models import Field
+from .database.models import Field
 
 @dataclass
 class FieldCapacity:
@@ -25,7 +25,7 @@ class FieldHandler:
         humus_pct: float,
         root_depth_cm: float = 30.0,
         custom_lookup: dict | None = None
-    ) -> dict:
+    ) -> FieldCapacity:
         """
         Schätzt die Feldkapazität als nutzbare Feldkapazität (nFK) über die Wurzelzone.
 
@@ -105,13 +105,6 @@ class FieldHandler:
             nfk_mm_per_dm=nfk_mm_per_dm,
             nfk_total_mm=nfk_total_mm,
         )
-
-
-    def get_irrigation_events(self):
-        pass
-
-    def calculate_evapotranspiration(self, meteo_data):
-        pass
 
     def calculate_water_balance(self):
         pass
