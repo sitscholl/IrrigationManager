@@ -4,6 +4,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Optional
+from dataclasses import dataclass
 
 import pandas as pd
 import pandera.pandas as pa
@@ -13,6 +14,34 @@ from pandera.errors import SchemaError
 from .resample import MeteoResampler
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class Station:
+    id: str
+    elevation: float
+    latitude: float
+    longitude: float
+    data: pd.DataFrame
+
+    def __post_init__(self):
+        if -90 > self.latitude or self.latitude > 90:
+            raise ValueError("Latitude must be between -90 and 90")
+        if -180 > self.longitude or self.longitude > 180:
+            raise ValueError("Longitude must be between -180 and 180")
+
+        if self.elevation is None:
+            try:
+                self.elevation = self.get_elevation()
+            except Exception as e:
+                logger.warning(f"Fetching elevation for station {self.id} failed with error: {e}")
+
+    def get_elevation(self):
+        api_template = "https://api.opentopodata.org/v1/eudem25m?locations={lat},{lon}"
+        url = api_template.format(lat=self.latitude, lon=self.longitude)
+        response = requests.get(url)
+        response.raise_for_status()
+        elevation = response.json()["results"][0]["elevation"]
+        return elevation
 
 class MeteoHandler:
     """Manager class to query meteo data from multiple fields/stations and transform returned data to a consistent schema"""
@@ -29,6 +58,8 @@ class MeteoHandler:
 
         self.et0_calculator = et0_calculator
         self._session = requests.Session()
+
+        self.stations = []
 
     @property
     def output_schema(self) -> pa.DataFrameSchema:
@@ -90,6 +121,7 @@ class MeteoHandler:
                 return pd.DataFrame()
 
             response_data = pd.DataFrame(raw_data)
+            response_metadata = payload.get("metadata", {})
 
             if "datetime" not in response_data.columns:
                 logger.error("Missing 'datetime' column in response from %s", url)
@@ -103,7 +135,8 @@ class MeteoHandler:
 
         response_data = response_data.set_index("datetime").sort_index()
         response_data["station_id"] = station_id
-        return self._convert_solar_radiation_units(response_data)
+        response_data = self._convert_solar_radiation_units(response_data)
+        return response_data, response_metadata
 
     def _convert_solar_radiation_units(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -147,7 +180,7 @@ class MeteoHandler:
         if not self.radiation_fallback_station:
             return df
 
-        fallback_df = self._get_data(
+        fallback_df, _ = self._get_data(
             self.radiation_fallback_provider,
             self.radiation_fallback_station,
             start,
@@ -176,21 +209,15 @@ class MeteoHandler:
         df["solar_radiation"] = fallback_series
         return df
 
-    def _empty_dataframe(self) -> pd.DataFrame:
-        column_names = list(self.output_schema.columns.keys())
-        empty_df = pd.DataFrame(columns=column_names)
-        empty_df.index = pd.DatetimeIndex([], tz="UTC")
-        return empty_df
-
     def query(self, provider: str, station_ids: Sequence[str], start: datetime, end: datetime, resampler: MeteoResampler | None = None) -> pd.DataFrame:
         
         if start >= end:
             raise ValueError("start must be before end")
 
-        data_frames: list[pd.DataFrame] = []
+        stations: list[Station] = []
         for station in station_ids:
             try:
-                df = self._get_data(provider, station, start, end)
+                df, metadata = self._get_data(provider, station, start, end)
 
                 if df.empty:
                     logger.warning("No data returned for station %s", station)
@@ -199,20 +226,19 @@ class MeteoHandler:
                 df = self._fill_solar_radiation(df, start, end)
 
                 validated_df = self._validate(df)
-                data_frames.append(validated_df)
+                stations.append(Station(station, metadata["elevation"], metadata["latitude"], metadata["longitude"], validated_df))
+                logger.debug("Fetched data for station %s", station)
             except SchemaError as exc:
                 logger.error("Schema validation failed for station %s: %s", station, exc)
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.error("Unexpected error while fetching data for station %s: %s", station, exc)
 
-        if not data_frames:
-            return self._empty_dataframe()
-
-        data = pd.concat(data_frames).sort_index()
         if resampler is not None:
-            data = resampler.resample(data)
+            for i in stations:
+                i.data = resampler.resample(i.data)
 
-        return data
+        self.stations = stations
+        logger.info(f"Fetched data for {len(stations)} stations")
 
     def calculate_et0(self, meteo_data: pd.DataFrame, **kwargs):
         """
@@ -228,7 +254,7 @@ if __name__ == '__main__':
     config = load_config('config/config.yaml')
 
     handler = MeteoHandler(config)
-    data = handler.query('SBR', ['103'], datetime(2025, 10, 1), datetime(2025, 10, 2), resampler = MeteoResampler(freq='D', min_count = 20))
+    handler.query('SBR', ['103'], datetime(2025, 10, 1), datetime(2025, 10, 2), resampler = MeteoResampler(freq='D', min_count = 20))
 
-    data['solar_radiation'].plot()
-    print(data)
+    handler.stations[0].data['solar_radiation'].plot()
+    print(handler.stations[0].dataata)
