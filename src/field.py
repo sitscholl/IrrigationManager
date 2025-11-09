@@ -12,7 +12,7 @@ class FieldCapacity:
 
 class FieldHandler:
 
-    def __init__(self, field: Field, irrigation_manager):
+    def __init__(self, field: Field):
         self.id = field.id
         self.name = field.name
         self.reference_station = field.reference_station
