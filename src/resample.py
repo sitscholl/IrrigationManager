@@ -9,7 +9,9 @@ def get_mode(column: pd.Series):
     return column.mode().iloc[0]
 
 DEFAULT_RESAMPLING_CONFIG = {
-    "tair_2m": "mean",                           # Temperature 2m
+    "tair_2m": "mean",  
+    "tair_2m_min": "min",
+    "tair_2m_max": "max",                         # Temperature 2m
     "tsoil_25cm": "mean",     # Soil temperature -25cm
     "tdry_60cm": "mean",           # Dry temperature 60cm
     "twet_60cm": "mean",           # Wet temperature
@@ -30,21 +32,25 @@ DEFAULT_RESAMPLING_CONFIG = {
 
 class MeteoResampler:
 
-    def __init__(self, freq = 'D', min_count = 1, config: dict | None = None):
+    def __init__(self, freq = 'D', min_count = 1, resampling_config: dict | None = None):
         
-        if config is None:
-            config = DEFAULT_RESAMPLING_CONFIG
+        if resampling_config is None:
+            resampling_config = DEFAULT_RESAMPLING_CONFIG
         else:
-            config = {**DEFAULT_RESAMPLING_CONFIG, **config}
+            resampling_config = {**DEFAULT_RESAMPLING_CONFIG, **resampling_config}
         
         self.freq = freq
-        self.config = config
+        self.config = resampling_config
         self.min_count = min_count
 
     def resample(self, meteo_data, default_aggfunc: str | Callable | None = None):
 
         data_copy = meteo_data.copy()
         resample_colmap = self.config.copy()
+
+        if "tair_2m" in data_copy.columns:
+            data_copy["tair_2m_min"] = data_copy["tair_2m"]
+            data_copy["tair_2m_max"] = data_copy["tair_2m"]
 
         missing_data_columns = [col for col in resample_colmap if col not in data_copy.columns]
         if missing_data_columns:
