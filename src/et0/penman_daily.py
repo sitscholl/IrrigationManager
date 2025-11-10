@@ -12,12 +12,12 @@ if TYPE_CHECKING:
 
 class PenmanDailyCalculator(ET0Calculator):
 
-    def __init__(self, config, corrector: ETCorrection | None = None):
+    def __init__(self, config, corrector: "ETCorrection | None" = None):
         self.config = config
         self.corrector = corrector
 
-    @property
-    def name(self):
+    @classmethod
+    def name(cls):
         return "PenmanDaily"
 
     def _validate_data(self, data):

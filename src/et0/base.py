@@ -10,17 +10,17 @@ class ET0Calculator(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):
-            ET0Calculator.registry[cls.__name__] = cls
+            ET0Calculator.registry[cls.name()] = cls
 
-    @property
+    @classmethod
     @abstractmethod
-    def name(self):
+    def name(cls):
         pass    
 
     @abstractmethod
     def calculate(self, data):
         pass
 
-    def get_calculator_by_name(self, name):
-        return self.registry.get(name)
+    def get_calculator_by_name(name):
+        return ET0Calculator.registry.get(name)
 
