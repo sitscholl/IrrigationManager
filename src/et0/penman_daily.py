@@ -12,8 +12,7 @@ if TYPE_CHECKING:
 
 class PenmanDailyCalculator(ET0Calculator):
 
-    def __init__(self, config, corrector: "ETCorrection | None" = None):
-        self.config = config
+    def __init__(self, corrector: "ETCorrection | None" = None, **kwargs):
         self.corrector = corrector
 
     @classmethod
@@ -27,6 +26,9 @@ class PenmanDailyCalculator(ET0Calculator):
 
     def calculate(self, station: "Station", correct: bool = True):
 
+        if correct and self.corrector is None:
+            raise ValueError('Correct set to true but no corrector available.')
+
         meteo_data = station.data
         self._validate_data(meteo_data)
 
@@ -36,13 +38,13 @@ class PenmanDailyCalculator(ET0Calculator):
             rs=meteo_data.solar_radiation,
             elevation=station.elevation, 
             lat=station.latitude, 
-            tmax=meteo_data.tmax, 
-            tmin=meteo_data.tmin, 
+            tmax=meteo_data.tair_2m_max, 
+            tmin=meteo_data.tair_2m_min, 
             rh=meteo_data.relative_humidity
             )
 
-        if correct and self.corrector is None:
-            raise ValueError('Correct set to true but no corrector available.')
+        et.name = 'et0'
+        et = et.to_frame()
         
         if correct:
             et = self.corrector.apply_to(et, "et0")
