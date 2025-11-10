@@ -66,8 +66,7 @@ class IrrigDB:
         """
         with self.session_scope() as session:
             fields = (
-                session.query(models.Field.name)
-                .distinct()
+                session.query(models.Field)
                 .order_by(models.Field.name)
                 .all()
             )
@@ -219,9 +218,9 @@ if __name__ == '__main__':
     db = IrrigDB()
 
     fields = {
-        'Field1': {'reference_station': 'a', 'soil_type': 'a', 'area_ha': 1},
-        'Field2': {'reference_station': 'b', 'soil_type': 'b', 'area_ha': 2},
-        'Field3': {'reference_station': 'c', 'soil_type': 'c', 'area_ha': 3},
+        'Gänsacker': {'reference_station': '103', 'soil_type': 'sandiger Schluff', 'area_ha': 1},
+        'Pignatter': {'reference_station': '103', 'soil_type': 'sandiger Schluff', 'area_ha': 2},
+        'Dietlacker': {'reference_station': '103', 'soil_type': 'humoser lehmiger Sand', 'area_ha': 3},
     }
 
     for field_name in fields.keys():
@@ -231,10 +230,10 @@ if __name__ == '__main__':
         )
 
     db.add_field(
-        name='Field3',
-        reference_station='d',
-        soil_type='d',
-        area_ha=4,
+        name='Dietlacker',
+        reference_station='113',
+        soil_type = 'sandiger Schluff',
+        area_ha = 4
     )
 
     print(db.get_all_fields())
@@ -244,10 +243,10 @@ if __name__ == '__main__':
         print(inst.reference_station)
 
     db.add_irrigation_event(
-        field_name='Field1',
+        field_name='Gänsacker',
         date=datetime.date.today(),
         method='drip',
     )
 
-    print(db.query_irrigation_event('Field1', datetime.date.today()))
+    print(db.query_irrigation_event('Gänsacker', datetime.date.today()))
     db.close()
