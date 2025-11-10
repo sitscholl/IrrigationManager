@@ -247,6 +247,14 @@ class MeteoHandler:
         logger.error("Station %s not found", station_id)
         return pd.DataFrame()
 
+    def calculate_et(self, et_calculator, correct: bool = True):
+        """
+        Adds et0 or et values to the station data, depending on correct.
+        """
+        for station in self.stations:
+            station.data['et'] = et_calculator.calculate(station, correct)
+
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from .config import load_config
