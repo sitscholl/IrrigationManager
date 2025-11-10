@@ -47,14 +47,14 @@ class MeteoHandler:
     """Manager class to query meteo data from multiple fields/stations and transform returned data to a consistent schema"""
 
     def __init__(self, config: dict, et0_calculator: Optional[object] = None):
+        
+        self.radiation_fallback_provider = config.get("radiation_fallback_provider", "province")
+        self.radiation_fallback_station = config.get("radiation_fallback_station", "09700MS")
+        self.request_timeout = config.get("request_timeout", 60)
+
         api_config = config["api"]
         self.api_host = api_config["host"].rstrip("/")
         self.query_template = api_config["query_template"].lstrip("/")
-
-        meteo_config = config.get("meteo", {})
-        self.radiation_fallback_provider = meteo_config.get("radiation_fallback_provider", "province")
-        self.radiation_fallback_station = meteo_config.get("radiation_fallback_station", "09700MS")
-        self.request_timeout = meteo_config.get("request_timeout", 10)
 
         self.et0_calculator = et0_calculator
         self._session = requests.Session()
@@ -196,7 +196,7 @@ class MeteoHandler:
 
         fallback_series = (
             fallback_df["solar_radiation"]
-            .reindex(df.index)
+            .reindex(df.index, method='nearest', tolerance=pd.Timedelta('3min'))
             .interpolate(method="time", limit_direction="both")
             .bfill()
         )
@@ -209,8 +209,13 @@ class MeteoHandler:
         df["solar_radiation"] = fallback_series
         return df
 
-    def query(self, provider: str, station_ids: Sequence[str], start: datetime, end: datetime, resampler: MeteoResampler | None = None) -> pd.DataFrame:
+    def query(self, provider: str, station_ids: Sequence[str], start: datetime | str, end: datetime | str, resampler: MeteoResampler | None = None) -> pd.DataFrame:
         
+        if isinstance(start, str):
+            start = pd.to_datetime(start, dayfirst=True)
+        if isinstance(end, str):
+            end = pd.to_datetime(end, dayfirst=True)
+
         if start >= end:
             raise ValueError("start must be before end")
 
