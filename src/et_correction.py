@@ -29,7 +29,6 @@ class ETCorrection:
     def __init__(
         self,
         periods: Sequence[KcPeriod | Mapping[str, object]],
-        *,
         season_end: datetime | str | None = None,
     ) -> None:
 
@@ -57,6 +56,10 @@ class ETCorrection:
 
         start_ts = pd.Timestamp(start) if start else frame["start"].min().normalize()
         end_ts = pd.Timestamp(end) if end else frame["end"].max().normalize()
+
+        if start_ts.tzinfo is not None:
+            frame['start'] = frame['start'].dt.tz_localize(start_ts.tzinfo)
+            frame['end'] = frame['end'].dt.tz_localize(start_ts.tzinfo)
 
         daily_index = pd.date_range(start_ts, end_ts, freq="D")
         step_points = frame.set_index("start")["value"]
