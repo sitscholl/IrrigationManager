@@ -240,11 +240,12 @@ class MeteoHandler:
         self.stations = stations
         logger.info(f"Fetched data for {len(stations)} stations")
 
-    def calculate_et0(self, meteo_data: pd.DataFrame, **kwargs):
-        """
-        Use the et0 calculator and its method to calculate evapotranspiration from the meteodata
-        """
-        pass
+    def get_station_data(self, station_id: str) -> pd.DataFrame:
+        for station in self.stations:
+            if station.id == station_id:
+                return station.data
+        logger.error("Station %s not found", station_id)
+        return pd.DataFrame()
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
