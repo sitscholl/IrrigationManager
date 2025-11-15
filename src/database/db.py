@@ -48,17 +48,21 @@ class IrrigDB:
             .one_or_none()
         )
 
-    def _get_irrigation_event(
-        self, session: Session, field_id: int, date: datetime.date
+    def _get_irrigation_events(
+        self, session: Session, field_id: int, date: datetime.date | None = None
     ) -> Optional[models.Irrigation]:
-        return (
+        query = (
             session.query(models.Irrigation)
             .filter(
                 models.Irrigation.field_id == field_id,
-                models.Irrigation.date == date,
             )
-            .one_or_none()
         )
+
+        if date is not None:
+            query = query.filter(models.Irrigation.date == date)
+
+        return query.all()
+
 
     def get_all_fields(self) -> List[str]:
         """
@@ -117,13 +121,13 @@ class IrrigDB:
             logger.exception("Failed to persist field %s", name)
             return None
 
-    def query_irrigation_event(
-        self, field_name: str, date: datetime.date
+    def query_irrigation_events(
+        self, field_name: str, date: datetime.date | None = None
     ) -> Optional[models.Irrigation]:
         """
         Retrieve an irrigation event by field name and date.
         """
-        if isinstance(date, datetime.datetime):
+        if date is not None and isinstance(date, datetime.datetime):
             raise NotImplementedError(
                 'Only datetime.date objects are allowed in irrigation database'
             )
@@ -137,7 +141,7 @@ class IrrigDB:
                 )
                 return None
 
-            return self._get_irrigation_event(session, field.id, date)
+        return self._get_irrigation_events(session, field.id, date)
 
     def add_irrigation_event(
         self,
@@ -164,9 +168,9 @@ class IrrigDB:
                     )
                     return None
 
-                event = self._get_irrigation_event(session, field.id, date)
+                events = self._get_irrigation_events(session, field.id, date)
 
-                if event is None:
+                if len(events) == 0:
                     logger.debug(
                         "Adding new irrigation event for field %s on %s",
                         field_name,
@@ -185,6 +189,7 @@ class IrrigDB:
                         field_name,
                         date,
                     )
+                    event = events[0] #TODO: Improve this to also handle the case where multiple events in one day
                     event.method = method
                     event.amount = amount
 
@@ -209,6 +214,7 @@ class IrrigDB:
 
 if __name__ == '__main__':
     import logging.config
+    import pandas as pd
 
     from ..config import load_config
 
@@ -229,24 +235,24 @@ if __name__ == '__main__':
             **fields[field_name],
         )
 
-    db.add_field(
-        name='Dietlacker',
-        reference_station='113',
-        soil_type = 'sandiger Schluff',
-        area_ha = 4
-    )
+    # db.add_field(
+    #     name='Dietlacker',
+    #     reference_station='113',
+    #     soil_type = 'sandiger Schluff',
+    #     area_ha = 4
+    # )
 
+    for date in pd.date_range("04-01-2025", "10-01-2025", freq = "2W"):
+        for field in fields.keys():
+            db.add_irrigation_event(
+                field_name=field,
+                date=date.date(),
+                method='drip',
+            )
+
+    print('Fields in database:')
     print(db.get_all_fields())
-    for field_name in fields.keys():
-        inst = db.query_field(field_name)
-        print(inst)
-        print(inst.reference_station)
 
-    db.add_irrigation_event(
-        field_name='Gänsacker',
-        date=datetime.date.today(),
-        method='drip',
-    )
-
-    print(db.query_irrigation_event('Gänsacker', datetime.date.today()))
+    print('Irrigation events for Gänsacker:')
+    print(db.query_irrigation_events('Gänsacker'))
     db.close()
