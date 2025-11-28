@@ -50,7 +50,7 @@ class MeteoHandler:
         
         self.radiation_fallback_provider = config.get("radiation_fallback_provider", "province")
         self.radiation_fallback_station = config.get("radiation_fallback_station", "09700MS")
-        self.request_timeout = config.get("request_timeout", 60)
+        self.request_timeout = config.get("request_timeout", 600)
 
         api_config = config["api"]
         self.api_host = api_config["host"].rstrip("/")
@@ -118,20 +118,20 @@ class MeteoHandler:
             raw_data = payload.get("data", [])
             if not raw_data:
                 logger.warning("No data returned for station %s (%s)", station_id, provider)
-                return pd.DataFrame()
+                return pd.DataFrame(), None
 
             response_data = pd.DataFrame(raw_data)
             response_metadata = payload.get("metadata", {})
 
             if "datetime" not in response_data.columns:
                 logger.error("Missing 'datetime' column in response from %s", url)
-                return pd.DataFrame()
+                return pd.DataFrame(), None
 
             response_data["datetime"] = pd.to_datetime(response_data["datetime"], utc=True)
 
         except (requests.exceptions.RequestException, ValueError) as exc:
             logger.error("Error fetching data from %s: %s", url, exc)
-            return pd.DataFrame()
+            return pd.DataFrame(), None
 
         response_data = response_data.set_index("datetime").sort_index()
         response_data["station_id"] = station_id
