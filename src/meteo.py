@@ -50,7 +50,7 @@ class MeteoHandler:
         
         self.radiation_fallback_provider = config.get("radiation_fallback_provider", "province")
         self.radiation_fallback_station = config.get("radiation_fallback_station", "09700MS")
-        self.request_timeout = config.get("request_timeout", 600)
+        self.request_timeout = config.get("request_timeout", 60)
 
         api_config = config["api"]
         self.api_host = api_config["host"].rstrip("/")
@@ -128,7 +128,9 @@ class MeteoHandler:
                 return pd.DataFrame(), None
 
             response_data["datetime"] = pd.to_datetime(response_data["datetime"], utc=True)
-
+        except requests.exceptions.Timeout:
+            logger.error("Request to %s timed out. Try a smaller temporal window.", url)
+            return pd.DataFrame(), None
         except (requests.exceptions.RequestException, ValueError) as exc:
             logger.error("Error fetching data from %s: %s", url, exc)
             return pd.DataFrame(), None
@@ -257,7 +259,7 @@ class MeteoHandler:
         Adds et0 or et values to the station data, depending on correct.
         """
         for station in self.stations:
-            station.data['et'] = et_calculator.calculate(station, correct)
+            station.data = station.data.join(et_calculator.calculate(station, correct))
 
 
 if __name__ == '__main__':
