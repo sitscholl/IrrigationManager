@@ -10,7 +10,7 @@ from src.meteo import MeteoHandler
 from src.resample import MeteoResampler
 from src.et0.base import ET0Calculator
 from src.et_correction import ETCorrection
-# from src.plot import WaterBalancePlot
+from src.base_plot import BasePlot
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,12 @@ def main():
         logger.info('No fields configured in database. Terminating')
         sys.exit(1)
 
-
     meteo = MeteoHandler(config['meteo'])
     resampler = MeteoResampler(**config['resampling'])
     et_corrector = ETCorrection(**config['evapotranspiration']['correction'])
     et_calculator = ET0Calculator.get_calculator_by_name(config['evapotranspiration']['method'])(corrector = et_corrector)
 
-    # wb_plot = WaterBalancePlot(config['plot'])
+    wb_plot = BasePlot().create_base(subpanels=1, vertical_spacing = .1, main_title="Microclimate & Irrigation")
 
     reference_stations = set([i.reference_station for i in fields])
     meteo.query(
@@ -46,6 +45,11 @@ def main():
         resampler = resampler
     )
     meteo.calculate_et(et_calculator, correct = True)
+
+    station_data = meteo.stations[0].data
+    wb_plot.plot_line(station_data.index, station_data['et0'], name="ET0 (mm)")
+    wb_plot.plot_line(station_data.index, station_data['et0_corrected'], name="ET0 corrected (mm)")
+    wb_plot.fig.write_html("debug_plot.html")
 
     # for field in fields:
     #     field_irrigation_events = db.query_irrigation_event(field.name)
