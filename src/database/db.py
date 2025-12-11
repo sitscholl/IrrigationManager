@@ -125,7 +125,7 @@ class IrrigDB:
         self, field_name: str, date: datetime.date | None = None
     ) -> Optional[models.Irrigation]:
         """
-        Retrieve an irrigation event by field name and date.
+        Retrieve an irrigation event by field name and (optional) date.
         """
         if date is not None and isinstance(date, datetime.datetime):
             raise NotImplementedError(
@@ -216,10 +216,10 @@ if __name__ == '__main__':
     import logging.config
     import pandas as pd
 
-    from ..config import load_config
+    # from ..config import load_config
 
-    config = load_config('config/config.yaml')
-    logging.config.dictConfig(config['logging'])
+    # config = load_config('config/config.yaml')
+    # logging.config.dictConfig(config['logging'])
 
     db = IrrigDB()
 
