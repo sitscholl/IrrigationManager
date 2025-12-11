@@ -46,18 +46,13 @@ def main():
     )
     meteo.calculate_et(et_calculator, correct = True)
 
-    station_data = meteo.stations[0].data
-    wb_plot.plot_line(station_data.index, station_data['et0'], name="ET0 (mm)")
-    wb_plot.plot_line(station_data.index, station_data['et0_corrected'], name="ET0 corrected (mm)")
-    wb_plot.fig.write_html("debug_plot.html")
+    for field in fields:
+        field_irrigation_events = db.query_irrigation_event(field.name)
+        field.calculate_water_balance(
+            meteo.get_station_data(field.reference_station), field_irrigation_events
+            )
 
-    # for field in fields:
-    #     field_irrigation_events = db.query_irrigation_event(field.name)
-    #     field.calculate_water_balance(
-    #         meteo.get_station_data(field.reference_station), field_irrigation_events
-    #         )
-
-    #     wb_plot.plot_field(field, field_irrigation_events)
+        wb_plot.plot_field(field, field_irrigation_events)
 
 
 
