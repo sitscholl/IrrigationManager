@@ -171,9 +171,11 @@ class BasePlot:
         if hover_name:
             hovertemplate = f"{hover_name}<br>" + hovertemplate
 
+        # normalize x to plain datetimes so JSON serialization works
+        x_vals = pd.to_datetime(x).to_pydatetime().tolist()
         self.fig.add_trace(
             go.Scatter(
-                x=list(x),
+                x=x_vals,
                 y=list(y),
                 name=name,
                 mode=mode,
@@ -222,6 +224,7 @@ class BasePlot:
         rights = centers + bar_width / 2
 
         # Plot as a histogram-like bar trace
+        centers = pd.to_datetime(times).to_pydatetime().tolist()
         self.fig.add_trace(
             go.Bar(
                 x=centers,
