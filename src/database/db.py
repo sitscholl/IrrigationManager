@@ -1,8 +1,10 @@
 import datetime
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Generator, List, Optional
 
+import yaml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -88,12 +90,17 @@ class IrrigDB:
         name: str,
         reference_station: str,
         soil_type: str,
-        area_ha: float,
-        p_allowable: float = 0,
+        area_ha: float | None = None,
+        p_allowable: float | None = 0,
     ) -> Optional[models.Field]:
         """
         Add a new field or update an existing one.
         """
+        reference_station = str(reference_station)
+        soil_type = str(soil_type)
+        area_ha_value = float(area_ha) if area_ha is not None else None
+        p_allowable_value = float(p_allowable) if p_allowable is not None else 0
+
         try:
             with self.session_scope() as session:
                 field = self._get_field_by_name(session, name)
@@ -104,22 +111,78 @@ class IrrigDB:
                         name=name,
                         reference_station=reference_station,
                         soil_type=soil_type,
-                        area_ha=area_ha,
-                        p_allowable=p_allowable,
+                        area_ha=area_ha_value,
+                        p_allowable=p_allowable_value,
                     )
                     session.add(field)
                 else:
-                    logger.debug("Updating existing field %s", name)
-                    field.reference_station = reference_station
-                    field.soil_type = soil_type
-                    field.area_ha = area_ha
-                    field.p_allowable = p_allowable
+                    updated = False
+
+                    if field.reference_station != reference_station:
+                        field.reference_station = reference_station
+                        updated = True
+                    if field.soil_type != soil_type:
+                        field.soil_type = soil_type
+                        updated = True
+                    if field.area_ha != area_ha_value:
+                        field.area_ha = area_ha_value
+                        updated = True
+                    if field.p_allowable != p_allowable_value:
+                        field.p_allowable = p_allowable_value
+                        updated = True
+
+                    if not updated:
+                        logger.debug("No changes for field %s; skipping update", name)
+                        return field
 
                 session.flush()  # ensure primary key is populated for new records
                 return field
         except Exception:
             logger.exception("Failed to persist field %s", name)
             return None
+
+    def load_fields_from_config(self, config_path: str = "config/fields.yaml") -> None:
+        """
+        Load fields from a YAML file and upsert them into the database.
+        """
+        config_file = Path(config_path)
+
+        if not config_file.exists():
+            logger.warning("Field configuration file %s not found. Skipping field sync.", config_file)
+            return
+
+        try:
+            with config_file.open("r", encoding="utf-8") as file:
+                field_config = yaml.safe_load(file) or {}
+        except Exception:
+            logger.exception("Failed to read field configuration from %s", config_file)
+            return
+
+        if not isinstance(field_config, dict):
+            logger.error("Field configuration in %s must be a mapping of field names to attributes.", config_file)
+            return
+
+        for field_name, field_data in field_config.items():
+            if not isinstance(field_data, dict):
+                logger.warning("Skipping field %s because its configuration is not a mapping.", field_name)
+                continue
+
+            missing_keys = [key for key in ("reference_station", "soil_type") if key not in field_data]
+            if missing_keys:
+                logger.warning(
+                    "Skipping field %s because required keys are missing: %s",
+                    field_name,
+                    ", ".join(missing_keys),
+                )
+                continue
+
+            self.add_field(
+                name=field_name,
+                reference_station=field_data["reference_station"],
+                soil_type=field_data["soil_type"],
+                area_ha=field_data.get("area_ha"),
+                p_allowable=field_data.get("p_allowable", 0),
+            )
 
     def query_irrigation_events(
         self, field_name: str, date: datetime.date | None = None

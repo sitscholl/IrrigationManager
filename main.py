@@ -15,6 +15,7 @@ if __name__ == "__main__":
     config = load_config('config/config.yaml')
     logging.config.dictConfig(config['logging'])
     db = IrrigDB(**config.get('database', {}))
+    db.load_fields_from_config(config.get('fields_config', 'config/fields.yaml'))
 
     logger.info("#"*50)
     logger.info('Starting water balance calculation')
