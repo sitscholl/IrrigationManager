@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import dataclass
 
 import pandas as pd
@@ -108,7 +108,7 @@ class MeteoHandler:
         station_id: str,
         start: datetime,
         end: datetime,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, Optional[dict]]:
         url = self._build_url(provider, station_id, start, end)
         try:
             response = self._session.get(url, timeout=self.request_timeout)
