@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.10.7",
+    "nicegui>=3.4.0",
     "pandas>=2.3.3",
     "pandera[pandas]>=0.26.1",
     "plotly>=6.4.0",
