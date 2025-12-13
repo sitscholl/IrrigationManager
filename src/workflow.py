@@ -79,7 +79,7 @@ class WaterBalanceWorkflow:
 
                 station = station[0]
 
-                field_capacity = field.get_field_capacity(humus_pct = 5) #todo change humus_pct
+                field_capacity = field.get_field_capacity() #todo change humus_pct
                 field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
 
                 field_wb = field.calculate_water_balance(

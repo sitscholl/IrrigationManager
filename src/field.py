@@ -30,15 +30,15 @@ class FieldHandler:
         self.name = field.name
         self.reference_station = field.reference_station
         self.soil_type = field.soil_type
+        self.humus_pct = field.humus_pct
         self.area_ha = field.area_ha
+        self.root_depth_cm = field.root_depth_cm
         self.p_allowable = field.p_allowable
         self.field_capacity: FieldCapacity | None = None
         self.water_balance: pd.DataFrame | None = None
 
     def get_field_capacity(
         self,
-        humus_pct: float,
-        root_depth_cm: float = 30.0,
         custom_lookup: dict | None = None
     ) -> FieldCapacity:
         """
@@ -52,7 +52,6 @@ class FieldHandler:
           5) Optional: RAW = p_allowable * nFK_total.
 
         Args:
-            humus_pct: Humusgehalt in %. (Faustregel-Aufschlag aktiviert >1.5 %)
             root_depth_cm: Wurzeltiefe der Kultur in cm.
             custom_lookup: Optional eigene Mapping-Tabelle
                 {bodenart_lower: (min_mm_pro_dm, max_mm_pro_dm)}.
@@ -102,16 +101,16 @@ class FieldHandler:
         base_mm_per_dm = (nfk_min + nfk_max) / 2.0
 
         # Humus-Aufschlag: +1.5 mm/dm je 1% über 1.5%, max +6 mm/dm
-        humus_extra = max(0.0, humus_pct - 1.5) * 1.5
+        humus_extra = max(0.0, self.humus_pct - 1.5) * 1.5
         humus_extra = min(humus_extra, 6.0)
 
         nfk_mm_per_dm = base_mm_per_dm + humus_extra
-        nfk_total_mm = nfk_mm_per_dm * (root_depth_cm / 10.0)
+        nfk_total_mm = nfk_mm_per_dm * (self.root_depth_cm / 10.0)
 
         capacity = FieldCapacity(
             soil_type=self.soil_type,
-            root_dept = root_depth_cm,   
-            humus_pct = humus_pct,         
+            root_dept = self.root_depth_cm,   
+            humus_pct = self.humus_pct,         
             nfk_mm_per_dm=nfk_mm_per_dm,
             nfk_total_mm=nfk_total_mm,
         )

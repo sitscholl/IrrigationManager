@@ -90,6 +90,8 @@ class IrrigDB:
         name: str,
         reference_station: str,
         soil_type: str,
+        humus_pct: float,
+        root_depth_cm: float = 30,
         area_ha: float | None = None,
         p_allowable: float | None = 0,
     ) -> Optional[models.Field]:
@@ -98,6 +100,8 @@ class IrrigDB:
         """
         reference_station = str(reference_station)
         soil_type = str(soil_type)
+        humus_pct = float(humus_pct)
+        root_depth_cm = float(root_depth_cm)
         area_ha_value = float(area_ha) if area_ha is not None else None
         p_allowable_value = float(p_allowable) if p_allowable is not None else 0
 
@@ -111,6 +115,8 @@ class IrrigDB:
                         name=name,
                         reference_station=reference_station,
                         soil_type=soil_type,
+                        humus_pct=humus_pct,
+                        root_depth_cm=root_depth_cm,
                         area_ha=area_ha_value,
                         p_allowable=p_allowable_value,
                     )
@@ -123,6 +129,12 @@ class IrrigDB:
                         updated = True
                     if field.soil_type != soil_type:
                         field.soil_type = soil_type
+                        updated = True
+                    if field.humus_pct != humus_pct:
+                        field.humus_pct = humus_pct
+                        updated = True
+                    if field.root_depth_cm != root_depth_cm:
+                        field.root_depth_cm = root_depth_cm
                         updated = True
                     if field.area_ha != area_ha_value:
                         field.area_ha = area_ha_value
@@ -167,7 +179,7 @@ class IrrigDB:
                 logger.warning("Skipping field %s because its configuration is not a mapping.", field_name)
                 continue
 
-            missing_keys = [key for key in ("reference_station", "soil_type") if key not in field_data]
+            missing_keys = [key for key in ("reference_station", "humus_pct", "soil_type") if key not in field_data]
             if missing_keys:
                 logger.warning(
                     "Skipping field %s because required keys are missing: %s",
@@ -180,6 +192,8 @@ class IrrigDB:
                 name=field_name,
                 reference_station=field_data["reference_station"],
                 soil_type=field_data["soil_type"],
+                humus_pct=field_data["humus_pct"],
+                root_depth_cm=field_data.get("root_depth_cm", 30),
                 area_ha=field_data.get("area_ha"),
                 p_allowable=field_data.get("p_allowable", 0),
             )
