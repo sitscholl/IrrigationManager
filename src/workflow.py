@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 
 from .field import FieldHandler
+from .irrigation import FieldIrrigation
 from .meteo import MeteoHandler
 from .resample import MeteoResampler
 from .et0.base import ET0Calculator
@@ -56,7 +57,7 @@ class WaterBalanceWorkflow:
 
         ## Query Meteo Data
         reference_stations = set([i.reference_station for i in self.fields])
-        self.runtime_context.meteo.query(
+        self.runtime_context.meteo_handler.query(
             provider = "SBR",
             station_ids = reference_stations,
             start = self.season_start,
@@ -65,15 +66,18 @@ class WaterBalanceWorkflow:
         )
 
         ## Calculate evapotranspiration
-        self.runtime_context.meteo.calculate_et(self.runtime_context.et_calculator, correct = True)
+        self.runtime_context.meteo_handler.calculate_et(self.runtime_context.et_calculator, correct = True)
 
         ## Calculate water balance for each field
         for field in self.fields:
             try:
-                field_irrigation_events = self.db.query_irrigation_events(field.name)
+                field_capacity = field.get_field_capacity(humus_pct = 5) #todo change humus_pct
+                field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
+
                 field_wb = field.calculate_water_balance(
-                    self.runtime_context.meteo.get_station_data(field.reference_station), field_irrigation_events
+                    self.runtime_context.meteo_handler.get_station_data(field.reference_station), field_irrigation
                     )
+
                 self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
                 logger.debug(f"Calculated water-balance for field {field.name}")
             except Exception as e:
