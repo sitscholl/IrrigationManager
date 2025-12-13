@@ -59,8 +59,6 @@ class MeteoHandler:
         self.et0_calculator = et0_calculator
         self._session = requests.Session()
 
-        self.stations = []
-
     @property
     def output_schema(self) -> pa.DataFrameSchema:
         """
@@ -211,7 +209,14 @@ class MeteoHandler:
         df["solar_radiation"] = fallback_series
         return df
 
-    def query(self, provider: str, station_ids: Sequence[str], start: datetime | str, end: datetime | str, resampler: MeteoResampler | None = None) -> pd.DataFrame:
+    def query(
+            self, 
+            provider: str, 
+            station_ids: Sequence[str], 
+            start: datetime | str, 
+            end: datetime | str, 
+            resampler: MeteoResampler | None = None
+        ) -> list[Station]:
         
         if isinstance(start, str):
             start = pd.to_datetime(start, dayfirst=True)
@@ -244,21 +249,14 @@ class MeteoHandler:
             for i in stations:
                 i.data = resampler.resample(i.data)
 
-        self.stations = stations
         logger.info(f"Fetched data for {len(stations)} stations")
+        return stations
 
-    def get_station_data(self, station_id: str) -> pd.DataFrame:
-        for station in self.stations:
-            if station.id == station_id:
-                return station.data
-        logger.error("Station %s not found", station_id)
-        return pd.DataFrame()
-
-    def calculate_et(self, et_calculator, correct: bool = True):
+    def calculate_et(self, stations, et_calculator, correct: bool = True):
         """
         Adds et0 or et values to the station data, depending on correct.
         """
-        for station in self.stations:
+        for station in stations:
             station.data = station.data.join(et_calculator.calculate(station, correct))
 
 

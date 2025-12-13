@@ -57,7 +57,7 @@ class WaterBalanceWorkflow:
 
         ## Query Meteo Data
         reference_stations = set([i.reference_station for i in self.fields])
-        self.runtime_context.meteo_handler.query(
+        stations = self.runtime_context.meteo_handler.query(
             provider = "SBR",
             station_ids = reference_stations,
             start = self.season_start,
@@ -66,16 +66,24 @@ class WaterBalanceWorkflow:
         )
 
         ## Calculate evapotranspiration
-        self.runtime_context.meteo_handler.calculate_et(self.runtime_context.et_calculator, correct = True)
+        for st in stations:
+            st.data = st.data.join(self.runtime_context.et_calculator.calculate(st, correct = True))
 
         ## Calculate water balance for each field
         for field in self.fields:
             try:
+                station = [i for i in stations if i.id == field.reference_station]
+                if len(station) == 0:
+                    logger.warning(f"Reference station {field.reference_station} for field {field.name} not found. Skipping")
+                    continue
+
+                station = station[0]
+
                 field_capacity = field.get_field_capacity(humus_pct = 5) #todo change humus_pct
                 field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
 
                 field_wb = field.calculate_water_balance(
-                    self.runtime_context.meteo_handler.get_station_data(field.reference_station), field_irrigation
+                    station.data, field_irrigation
                     )
 
                 self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
