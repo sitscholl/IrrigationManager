@@ -3,6 +3,7 @@ import pandas as pd
 from dataclasses import dataclass
 
 from .database.models import Field
+from .irrigation import FieldIrrigation
 
 @dataclass
 class FieldCapacity:
@@ -11,6 +12,16 @@ class FieldCapacity:
     humus_pct: float
     nfk_mm_per_dm: float
     nfk_total_mm: float
+
+    def __post_init(self):
+        if self.root_dept <= 0:
+            raise ValueError("root_depth_cm must be > 0.")
+        if self.nfk_mm_per_dm <= 0:
+            raise ValueError("nfk_mm_per_dm must be > 0.")
+        if self.nfk_total_mm <= 0:
+            raise ValueError("nfk_total_mm must be > 0.")
+        if self.humus_pct < 0:
+            raise ValueError("humus_pct cannot be negative.")
 
 class FieldHandler:
 
@@ -57,11 +68,6 @@ class FieldHandler:
             KeyError: wenn Bodenart nicht in der Lookup-Tabelle ist.
             ValueError: bei unplausiblen Eingaben.
         """
-
-        if root_depth_cm <= 0:
-            raise ValueError("root_depth_cm must be > 0.")
-        if humus_pct < 0:
-            raise ValueError("humus_pct cannot be negative.")
 
         # Standard-Lookup
         default_lookup: dict[str, tuple[float, float]] = {
@@ -113,7 +119,7 @@ class FieldHandler:
         self.field_capacity = capacity
         return capacity
 
-    def calculate_water_balance(self, station_data: pd.DataFrame, irrigation_events: pd.DataFrame):
+    def calculate_water_balance(self, station_data: pd.DataFrame, field_irrigation: FieldIrrigation | None = None):
         """
         Calculate the daily water balance of the field. The water balance is defined as incoming water (precipitation + irrigation)
         minus the actual evapotranspiration during a particular day. The maximum water balance corresponds to the soil field capacity of
@@ -140,40 +146,15 @@ class FieldHandler:
         precip = data["precipitation"].fillna(0.0)
         evap = data[et_column].fillna(0.0)
 
-        irrigation = pd.Series(0.0, index=data.index, name="irrigation")
-        if irrigation_events is not None and not irrigation_events.empty:
-            irr_df = irrigation_events.copy()
-            amount_column = next((col for col in ("amount", "amount_mm", "depth_mm", "depth") if col in irr_df.columns), None)
-            if amount_column is None:
-                raise KeyError("Irrigation events dataframe must contain an amount column (amount, amount_mm, depth_mm, depth).")
-
-            if "date" in irr_df.columns:
-                irr_df["date"] = pd.to_datetime(irr_df["date"])
-                irr_df = irr_df.set_index("date")
-            elif not isinstance(irr_df.index, pd.DatetimeIndex):
-                raise TypeError("Irrigation events require a datetime index or a 'date' column.")
-
-            irr_df = irr_df.sort_index()
-            target_tz = data.index.tz
-            if target_tz is not None:
-                if irr_df.index.tz is None:
-                    irr_df.index = irr_df.index.tz_localize(target_tz)
-                else:
-                    irr_df.index = irr_df.index.tz_convert(target_tz)
-            elif irr_df.index.tz is not None:
-                irr_df.index = irr_df.index.tz_localize(None)
-
-            daily = irr_df[amount_column].fillna(0.0).groupby(irr_df.index.normalize()).sum()
-            aligned = daily.reindex(data.index.normalize(), fill_value=0.0)
-            aligned.index = data.index
-            irrigation = aligned.astype(float)
+        if field_irrigation is None:
+            irrigation = pd.Series(0.0, index=data.index)
+        else:
+            irrigation = field_irrigation.to_dataframe(data.index, fill_value = 0.0)
 
         incoming = precip + irrigation
         net = incoming - evap
 
         capacity = self.field_capacity.nfk_total_mm
-        if capacity <= 0:
-            raise ValueError("Field capacity must be greater than zero to calculate the water balance.")
 
         storage = []
         current_storage = capacity
