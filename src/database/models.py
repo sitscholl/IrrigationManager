@@ -11,7 +11,7 @@ class Field(Base):
     name = Column(String, nullable=False, unique=True)
     reference_station = Column(String, nullable=False)
     soil_type = Column(String, nullable=False)
-    area_ha = Column(Float, nullable=False)
+    area_ha = Column(Float, nullable=True)
     p_allowable = Column(Float, nullable=False, default=0)
 
     irrigation_events = relationship(
