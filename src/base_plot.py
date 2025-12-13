@@ -13,11 +13,27 @@ class BasePlot:
     - plot_line: add a line to any row (panel)
     - plot_irrigation_events: add irrigation bars to a subpanel
     - render_streamlit: convenience helper for Streamlit pages
+    Styling leans toward compact meteorological charts (framed axes, light grid, muted backgrounds).
     """
 
-    def __init__(self, template: str = "plotly_white"):
+    def __init__(
+        self,
+        template: str = "plotly_white",
+        colorway: Optional[Sequence[str]] = None,
+    ):
         self.fig: Optional[go.Figure] = None
         self.template = template
+        # Subtle, meteo-style palette
+        self.colorway = list(colorway) if colorway else [
+            "#d0b556",  # warm yellow
+            "#c17846",  # muted orange/brown
+            "#4cb281",  # mid green
+            "#d94141",  # red
+            "#6aa5c3",  # blue/teal
+            "#7f8c8d",  # mid grey
+            "#1f4e78",  # deep blue (max wind)
+            "#b3b3b3",  # light grey accents
+        ]
 
     # -------------------------------
     # Layout / panels
@@ -61,15 +77,69 @@ class BasePlot:
             template=self.template,
             hovermode="x unified",   # one tooltip following the same x across panels
             title=({"text": main_title} if main_title else None),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0) if show_legend else dict(),
-            margin=dict(l=60, r=20, t=40 if main_title else 10, b=40),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.18,
+                xanchor="left",
+                x=0,
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="#d9d9d9",
+                borderwidth=1,
+                itemwidth=70,
+                font=dict(size=12, color="#2f2f2f"),
+            ) if show_legend else dict(),
+            margin=dict(l=70, r=30, t=50 if main_title else 25, b=110 if show_legend else 70),
+            plot_bgcolor="#f9f9f9",
+            paper_bgcolor="#ffffff",
+            font=dict(family="Arial, Helvetica, sans-serif", size=12, color="#2f2f2f"),
+            hoverlabel=dict(
+                bgcolor="#ffffff",
+                bordercolor="#bfbfbf",
+                font=dict(size=12, color="#2f2f2f"),
+            ),
+            colorway=self.colorway,
         )
         # date axis quality-of-life
         self.fig.update_xaxes(
-            showspikes=True, spikemode="across", spikesnap="cursor", spikethickness=1
+            showspikes=True,
+            spikemode="across",
+            spikesnap="cursor",
+            spikethickness=1,
+            showgrid=True,
+            gridcolor="#dcdcdc",
+            gridwidth=1,
+            zeroline=False,
+            showline=True,
+            linewidth=1.4,
+            linecolor="#2f2f2f",
+            mirror=True,
+            ticks="outside",
+            ticklen=6,
+            tickcolor="#2f2f2f",
+            tickfont=dict(size=11),
+            tickformatstops=[
+                dict(dtickrange=[None, 1000 * 60 * 60 * 24], value="%H:%M"),
+                dict(dtickrange=[1000 * 60 * 60 * 24, None], value="%d.%m\n%H:%M"),
+            ],
         )
         self.fig.update_yaxes(
-            showspikes=True, spikemode="across", spikesnap="cursor", spikethickness=1
+            showspikes=True,
+            spikemode="across",
+            spikesnap="cursor",
+            spikethickness=1,
+            showgrid=True,
+            gridcolor="#e3e3e3",
+            gridwidth=1,
+            zeroline=False,
+            showline=True,
+            linewidth=1.4,
+            linecolor="#2f2f2f",
+            mirror=True,
+            ticks="outside",
+            ticklen=6,
+            tickcolor="#2f2f2f",
+            tickfont=dict(size=11),
         )
         return self
 
@@ -158,13 +228,25 @@ class BasePlot:
                 y=list(amounts_mm),
                 name=name,
                 opacity=opacity,
+                marker=dict(
+                    color="#5c9be6",
+                    line=dict(width=0),
+                ),
                 width=[(r - l).total_seconds() * 1000 for l, r in zip(lefts, rights)],  # ms
                 hovertemplate="%{x}<br>%{y} mm",
             ),
             row=row,
             col=1,
         )
-        self.fig.update_yaxes(title_text=name, row=row, col=1)
+        # Keep the irrigation panel clean and focused on the bars
+        self.fig.update_yaxes(
+            title_text=name,
+            showgrid=False,
+            zeroline=False,
+            rangemode="tozero",
+            row=row,
+            col=1,
+        )
         return self
 
     # -------------------------------
@@ -198,7 +280,7 @@ if __name__ == '__main__':
     irrig_times = pd.to_datetime(["2025-05-01 06:00", "2025-05-02 19:00"])
     irrig_mm = [6, 8]
 
-    bp = BasePlot().create_base(subpanels=1, vertical_spacing = .1, main_title="Microclimate & Irrigation")
+    bp = BasePlot().create_base(subpanels=1, vertical_spacing=0.1, main_title="Microclimate & Irrigation")
     bp.set_yaxis_title("Temperature / ET", row=1)
     bp.plot_line(idx, air_T, name="Air Temp (°C)")
     bp.plot_line(idx, soil_T, name="Soil Temp 25cm (°C)", dash="dash")
