@@ -9,6 +9,8 @@ class FieldIrrigation:
     
     def __init__(self, field_id: str, dates: list[datetime], amounts: list[float]):
 
+        if len(dates) != len(amounts):
+            raise ValueError(f'Dates and amounts must have the same length. Got {len(self.dates)} dates and {len(self.amounts)} amounts.')
 
         dates_re = []
         for date in dates:
@@ -18,9 +20,6 @@ class FieldIrrigation:
                 except Exception as e:
                     raise ValueError(f'Error transforming input dates to datetime for FieldIrrigation: {e}')
             dates_re.append(date)
-
-        if len(self.dates) != len(self.amounts):
-            raise ValueError(f'Dates and amounts must have the same length. Got {len(self.dates)} dates and {len(self.amounts)} amounts.')
 
         self.field_id = field_id
         self.dates = dates_re
