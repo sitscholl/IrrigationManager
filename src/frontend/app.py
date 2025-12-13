@@ -1,5 +1,7 @@
 import asyncio
-import logging, logging.config
+import logging
+import logging.config
+
 from nicegui import ui
 
 from src.config import load_config
@@ -39,26 +41,33 @@ async def get_fig(force: bool = False):
 
 @ui.page('/')
 async def index():
-    ui.label('Water balance').classes('text-2xl font-semibold')
-    status = ui.label('Loading data...')
-    spinner = ui.spinner('bars', size='6em')
-    container = ui.column()  # holds the plot once ready
+    with ui.card().classes("w-full max-w-3xl mx-auto shadow-lg"):
+        root = ui.column().classes("w-full max-w-5xl mx-auto gap-4")
 
-    async def load_and_render(force: bool = False):
-        fig = await get_fig(force=force)
-        status.set_text('Ready')
-        spinner.visible = False
-        container.clear()
-        # enter the slot explicitly to add new UI elements
-        with container:
-            ui.plotly(fig).classes('w-full h-[80vh]')
+        header = ui.row().classes("w-full items-center justify-between")
+        with header:
+            ui.label('Water balance').classes('text-2xl font-bold')
 
-    asyncio.create_task(load_and_render())
+        container = ui.element().classes("w-full")
+        status = ui.label('Loading data...')
+        spinner = ui.spinner('bars', size='6em')
 
-    ui.button(
-        'Re-run workflow',
-        on_click=lambda: asyncio.create_task(load_and_render(force=True)),
-    )
+        async def load_and_render(force: bool = False):
+            fig = await get_fig(force=force)
+            status.delete()
+            spinner.delete()
+            container.clear()
+            # enter the slot explicitly to add new UI elements
+            with container:
+                ui.plotly(fig).classes('w-full h-[80vh]')
 
-if __name__ == '__main__':
-    ui.run(title='Irrigation Manager', reload=False)
+        asyncio.create_task(load_and_render())
+
+        # Place the refresh button after the plot area
+        ui.button(
+            'Re-run workflow',
+            on_click=lambda: asyncio.create_task(load_and_render(force=True)),
+        ).classes("self-start")
+
+
+ui.run(title='Irrigation Manager', reload=True)

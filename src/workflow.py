@@ -49,7 +49,7 @@ class WaterBalanceWorkflow:
             et_calculator = et_calculator,
         )
 
-        self.plot = BasePlot().create_base(subpanels=1, vertical_spacing = .1, main_title="Microclimate & Irrigation")
+        self.plot = BasePlot().create_base(vertical_spacing = .1)
 
         logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields from {self.season_start} to {self.season_end}.')
 
