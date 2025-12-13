@@ -300,29 +300,12 @@ if __name__ == '__main__':
 
     db = IrrigDB()
 
-    fields = {
-        'Gänsacker': {'reference_station': '103', 'soil_type': 'sandiger Schluff', 'area_ha': 1},
-        'Pignatter': {'reference_station': '103', 'soil_type': 'sandiger Schluff', 'area_ha': 2},
-        'Dietlacker': {'reference_station': '103', 'soil_type': 'humoser lehmiger Sand', 'area_ha': 3},
-    }
-
-    for field_name in fields.keys():
-        db.add_field(
-            name=field_name,
-            **fields[field_name],
-        )
-
-    # db.add_field(
-    #     name='Dietlacker',
-    #     reference_station='113',
-    #     soil_type = 'sandiger Schluff',
-    #     area_ha = 4
-    # )
+    fields = db.get_all_fields()
 
     for date in pd.date_range("04-01-2025", "10-01-2025", freq = "2W"):
-        for field in fields.keys():
+        for field in fields:
             db.add_irrigation_event(
-                field_name=field,
+                field_name=field.name,
                 date=date.date(),
                 method='drip',
             )
@@ -330,6 +313,4 @@ if __name__ == '__main__':
     print('Fields in database:')
     print(db.get_all_fields())
 
-    print('Irrigation events for Gänsacker:')
-    print(db.query_irrigation_events('Gänsacker'))
     db.close()
