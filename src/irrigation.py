@@ -8,9 +8,7 @@ from src.database.models import Irrigation
 class FieldIrrigation:
     
     def __init__(self, field_id: str, dates: list[datetime], amounts: list[float]):
-        self.field_id = field_id
-        self.dates = dates
-        self.amounts = amounts
+
 
         dates_re = []
         for date in dates:
@@ -21,25 +19,33 @@ class FieldIrrigation:
                     raise ValueError(f'Error transforming input dates to datetime for FieldIrrigation: {e}')
             dates_re.append(date)
 
-    def from_list(self, irrigation_events: list[Irrigation]):
+        if len(self.dates) != len(self.amounts):
+            raise ValueError(f'Dates and amounts must have the same length. Got {len(self.dates)} dates and {len(self.amounts)} amounts.')
+
+        self.field_id = field_id
+        self.dates = dates_re
+        self.amounts = amounts
+
+    @staticmethod
+    def from_list(irrigation_events: list[Irrigation]):
         field_id = set(i.field_id for i in irrigation_events)
         if len(field_id) > 1:
             raise ValueError('Multiple fields found. Cannot initialize FieldIrrigation from list of irrigation events')
         if len(field_id) == 0:
             raise ValueError("No field_id found in list of irrigation events.")
 
-        field_id = field_id[0]
+        field_id = list(field_id)[0]
         irrigation_dates = [i.date for i in irrigation_events]
         irrigation_amounts = [i.amount for i in irrigation_events]
 
         return FieldIrrigation(field_id, irrigation_dates, irrigation_amounts)
 
-    def to_dataframe(self, index: pd.Series, fill_value = 0.0):
+    def to_dataframe(self, index: pd.DatetimeIndex, fill_value = 0.0):
 
-        if not isinstance(index, pd.Series):
-            raise ValueError('Index must be a pandas Series.')
-        if not is_datetime64_any_dtype(index):
-            raise ValueError(f"index must contain datetime values. Got {index.dtype} instead.")
+        if not isinstance(index, pd.DatetimeIndex):
+            raise ValueError('Index must be a pandas DatetimeIndex.')
+        # if not is_datetime64_any_dtype(index):
+        #     raise ValueError(f"index must contain datetime values. Got {index.dtype} instead.")
 
         irr_df = pd.DataFrame(
             {
