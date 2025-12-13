@@ -106,7 +106,7 @@ class IrrigDB:
                 field = self._get_field_by_name(session, name)
 
                 if field is None:
-                    logger.debug("Adding new field %s", name)
+                    logger.debug("Adding new field %s to database", name)
                     field = models.Field(
                         name=name,
                         reference_station=reference_station,
@@ -235,7 +235,7 @@ class IrrigDB:
 
                 if len(events) == 0:
                     logger.debug(
-                        "Adding new irrigation event for field %s on %s",
+                        "Adding new irrigation event for field %s on %s to database",
                         field_name,
                         date,
                     )
