@@ -27,6 +27,10 @@ class FieldIrrigation:
 
     @staticmethod
     def from_list(irrigation_events: list[Irrigation]):
+
+        if len(irrigation_events) == 0:
+            return None
+
         field_id = set(i.field_id for i in irrigation_events)
         if len(field_id) > 1:
             raise ValueError('Multiple fields found. Cannot initialize FieldIrrigation from list of irrigation events')
