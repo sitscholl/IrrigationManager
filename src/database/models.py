@@ -41,3 +41,24 @@ class Irrigation(Base):
 
     def __repr__(self) -> str:
         return f"Irrigation(id={self.id!r}, field_id={self.field_id!r}, date={self.date!r})"
+
+class WaterBalance(Base):
+    __tablename__ = 'water_balance'
+
+    date = Column(Date, primary_key=True)
+    field_id = Column(Integer, ForeignKey('fields.id'), primary_key=True)
+    precipitaton = Column(Float, nullable=False)
+    irrigation = Column(Float, nullable=False)
+    evapotranspiration = Column(Float, nullable=False)
+    incoming = Column(Float, nullable=False)
+    net = Column(Float, nullable=False)
+    soil_storage = Column(Float, nullable=False)
+    field_capacity = Column(Float, nullable=False)
+    deficit = Column(Float, nullable=False)
+    readily_available_water = Column(Float, nullable=True)
+    below_raw = Column(Float, nullable=True)
+
+    field = relationship('Field', back_populates='water_balance')
+
+    __table_args__ = (UniqueConstraint('field_id', 'date', name='uq_waterbalance_field_date'),)
+    
