@@ -70,7 +70,16 @@ class WaterBalanceWorkflow:
 
             if start_date >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
-                continue
+                wb_persisted = self.db.query_water_balance(field_id = field.id, start = self.season_start, end = self.season_end)
+                if wb_persisted:
+                    wb_df = pd.DataFrame(
+                        [{"date": rec.date, "soil_storage": rec.soil_storage} for rec in wb_persisted]
+                    )
+                    wb_df["date"] = pd.to_datetime(wb_df["date"])
+                    wb_df = wb_df.set_index("date").sort_index()
+                    self.plot.plot_line(wb_df.index, wb_df["soil_storage"], name=field.name)
+                else:
+                    logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
             else:
                 try:
                     logger.info(f"Starting calculation from {start_date.date()} for field {field.name}")
