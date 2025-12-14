@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 from dataclasses import dataclass
 
 import pandas as pd
@@ -59,7 +59,9 @@ class MeteoHandler:
         self.et0_calculator = et0_calculator
         self._session = requests.Session()
 
-        self.station_cache = {}
+        # Cache keyed by station_id with coverage window to avoid refetching.
+        # Structure: {station_id: {"station": Station, "start": Timestamp, "end": Timestamp, "metadata": dict}}
+        self.station_cache: dict[str, dict[str, Any]] = {}
 
     @property
     def output_schema(self) -> pa.DataFrameSchema:
@@ -218,7 +220,7 @@ class MeteoHandler:
             start: datetime | str, 
             end: datetime | str, 
             resampler: MeteoResampler | None = None
-        ) -> list[Station]:
+        ) -> Optional[Station]:
         
         if isinstance(start, str):
             start = pd.to_datetime(start, dayfirst=True)
@@ -228,33 +230,87 @@ class MeteoHandler:
         if start >= end:
             raise ValueError("start must be before end")
 
-        if station_id not in self.station_cache:
+        cache_entry = self.station_cache.get(station_id)
+        cached_station = cache_entry["station"] if cache_entry else None
+        cached_start = cache_entry["start"] if cache_entry else None
+        cached_end = cache_entry["end"] if cache_entry else None
+        cached_metadata = cache_entry["metadata"] if cache_entry else {}
+
+        needs_before = cached_start is None or start < cached_start
+        needs_after = cached_end is None or end > cached_end
+
+        fetch_windows = []
+        if cached_station is None:
+            fetch_windows.append((start, end))
+        else:
+            if needs_before:
+                fetch_windows.append((start, cached_start))
+            if needs_after:
+                fetch_windows.append((cached_end, end))
+
+        station = cached_station
+        metadata = cached_metadata
+
+        for window_start, window_end in fetch_windows:
+            if window_start is None or window_end is None or window_start >= window_end:
+                continue
             try:
-                df, metadata = self._get_data(provider, station_id, start, end)
+                df, meta = self._get_data(provider, station_id, window_start, window_end)
 
                 if df.empty:
-                    logger.warning("No data returned for station %s", station_id)
-                    return None
+                    logger.warning("No data returned for station %s in window %s - %s", station_id, window_start, window_end)
+                    continue
 
-                df = self._fill_solar_radiation(df, start, end)
+                df = self._fill_solar_radiation(df, window_start, window_end)
 
                 validated_df = self._validate(df)
-                validated_df = resampler.resample(validated_df)
+                if resampler is not None:
+                    validated_df = resampler.resample(validated_df)
 
-                station_obj = Station(station_id, metadata["elevation"], metadata["latitude"], metadata["longitude"], validated_df)
-                self.station_cache[station_id] = station_obj
-                
-                logger.debug("Fetched data for station %s", station_id)
+                metadata = meta or metadata or {}
+
+                if station is None:
+                    station = Station(
+                        station_id,
+                        metadata.get("elevation"),
+                        metadata.get("latitude"),
+                        metadata.get("longitude"),
+                        validated_df,
+                    )
+                else:
+                    merged = pd.concat([station.data, validated_df]).sort_index()
+                    station.data = merged[~merged.index.duplicated(keep="last")]
             except SchemaError as exc:
                 logger.error("Schema validation failed for station %s: %s", station_id, exc)
                 self.station_cache.pop(station_id, None)
-                return
+                return None
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.error("Unexpected error while fetching data for station %s: %s", station_id, exc)
                 self.station_cache.pop(station_id, None)
-                return
+                return None
 
-        return self.station_cache[station_id]
+        if station is None:
+            logger.warning("No data available for station %s", station_id)
+            return None
+
+        coverage_start = station.data.index.min()
+        coverage_end = station.data.index.max()
+        self.station_cache[station_id] = {
+            "station": station,
+            "start": coverage_start,
+            "end": coverage_end,
+            "metadata": metadata,
+        }
+
+        # Return a slice without mutating cached data
+        sliced_data = station.data.loc[(station.data.index >= start) & (station.data.index <= end)].copy()
+        return Station(
+            station.id,
+            station.elevation,
+            station.latitude,
+            station.longitude,
+            sliced_data,
+        )
 
     def calculate_et(self, stations, et_calculator, correct: bool = True):
         """
