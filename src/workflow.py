@@ -66,15 +66,16 @@ class WaterBalanceWorkflow:
 
             if start_date > period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
+                continue
             else:
                 try:
-                    logger.info(f"Found existing data for field {field.name}. Starting calculation from {start_date.date()}")
+                    logger.info(f"Starting calculation from {start_date.date()} for field {field.name}")
 
                     ## Query Meteo Data
                     reference_station = field.reference_station
                     station = self.runtime_context.meteo_handler.query(
                         provider = "SBR",
-                        station_ids = reference_station,
+                        station_id = reference_station,
                         start = start_date,
                         end = period_end,
                         resampler = self.runtime_context.resampler
@@ -92,7 +93,7 @@ class WaterBalanceWorkflow:
                     field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
 
                     field_wb = field.calculate_water_balance(
-                        station, field_irrigation, initial_storage=initial_storage
+                        station.data, field_irrigation, initial_storage=initial_storage
                         )
                     
                     ## Persist water balance
@@ -103,7 +104,7 @@ class WaterBalanceWorkflow:
 
                     ## Plot
                     self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
-                    
+
                     logger.debug(f"Calculated water-balance for field {field.name}")
                 except Exception as e:
                     logger.error(f"Error calculating water balance for field {field.name}: {e}")
