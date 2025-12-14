@@ -53,11 +53,11 @@ class WaterBalanceWorkflow:
 
         logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields from {self.season_start} to {self.season_end}.')
 
-    def run(self, force: bool = False):
+    def run(self, force_fields: list[int] | None = None):
 
         ## Delete existing data if force
-        if force:
-            self.db.clear_water_balance()
+        if force_fields is not None and len(force_fields) > 0:
+            self.db.clear_water_balance(force_fields)
 
         for field in self.fields:
 
@@ -68,7 +68,7 @@ class WaterBalanceWorkflow:
             initial_storage = latest_balance.soil_storage if latest_balance else None
             period_end = min(pd.Timestamp.today(), self.season_end)
 
-            if start_date > period_end:
+            if start_date >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
                 continue
             else:

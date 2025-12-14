@@ -186,7 +186,7 @@ class IrrigDB:
             logger.error("Field configuration in %s must be a mapping of field names to attributes.", config_file)
             return
 
-        any_updated = False
+        updated_fields = []
         for field_name, field_data in field_config.items():
             if not isinstance(field_data, dict):
                 logger.warning("Skipping field %s because its configuration is not a mapping.", field_name)
@@ -201,7 +201,7 @@ class IrrigDB:
                 )
                 continue
 
-            _, updated = self.add_field(
+            field_obj, updated = self.add_field(
                 name=field_name,
                 reference_station=field_data["reference_station"],
                 soil_type=field_data["soil_type"],
@@ -211,8 +211,8 @@ class IrrigDB:
                 p_allowable=field_data.get("p_allowable", 0),
             )
             if updated:
-                any_updated = True
-        return any_updated
+                updated_fields.append(field_obj.id)
+        return updated_fields
 
     def query_irrigation_events(
         self, field_name: str, date: datetime.date | None = None
@@ -335,19 +335,6 @@ class IrrigDB:
         with self.session_scope() as session:
             return self._get_latest_water_balance(session, field_id)
 
-    def clear_water_balance(self) -> int:
-        """
-        Delete all water balance entries. Returns number of rows deleted.
-        """
-        try:
-            with self.session_scope() as session:
-                deleted = session.query(models.WaterBalance).delete(synchronize_session=False)
-                logger.info("Cleared %s water balance rows from database", deleted)
-                return deleted
-        except Exception:
-            logger.exception("Failed to clear water balance data")
-            return 0
-
     def add_water_balance(self, water_balance: pd.DataFrame, field_id: int | None = None):
         """
         Upsert water balance records from a dataframe.
@@ -429,8 +416,26 @@ class IrrigDB:
                 session.merge(models.WaterBalance(**record))
             return len(records)
 
-    def clear_water_balance(self):
-        pass
+    def clear_water_balance(self, field_ids: list[int] | None = None) -> int:
+        """
+        Delete water balance entries. If field_ids provided, only delete those.
+        Returns number of rows deleted.
+        """
+        try:
+            with self.session_scope() as session:
+                query = session.query(models.WaterBalance)
+                if field_ids:
+                    query = query.filter(models.WaterBalance.field_id.in_(field_ids))
+                deleted = query.delete(synchronize_session=False)
+                logger.info(
+                    "Cleared %s water balance rows%s",
+                    deleted,
+                    f" for fields {field_ids}" if field_ids else "",
+                )
+                return deleted
+        except Exception:
+            logger.exception("Failed to clear water balance data")
+            return 0
 
     def close(self) -> None:
         """

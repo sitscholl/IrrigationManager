@@ -20,12 +20,12 @@ if __name__ == "__main__":
     logger.info("#"*50)
     
     db = IrrigDB(**config.get('database', {}))
-    any_updated = db.load_fields_from_config(config.get('fields_config', 'config/fields.yaml'))
+    updated_fields = db.load_fields_from_config(config.get('fields_config', 'config/fields.yaml'))
 
     workflow = WaterBalanceWorkflow(config, db)
     
     try:
-        workflow.run(force = True if any_updated else False)
+        workflow.run(force_fields = updated_fields)
     except Exception as e:
         logger.error(f"Error running water balance workflow: {e}", exc_info = True)
 
