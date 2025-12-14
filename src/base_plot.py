@@ -34,6 +34,8 @@ class BasePlot:
             "#1f4e78",  # deep blue (max wind)
             "#b3b3b3",  # light grey accents
         ]
+        # Keep track of colors actually used so marker overlays can match line colors
+        self._trace_colors: dict[str, str] = {}
 
     # -------------------------------
     # Layout / panels
@@ -158,6 +160,8 @@ class BasePlot:
         markers: bool = False,
         hover_name: Optional[str] = None,
         hover_units: Optional[str] = None,
+        color: Optional[str] = None,
+        legendgroup: Optional[str] = None,
     ) -> "BasePlot":
         """
         Add a line (optionally with markers) to a given panel row (1-indexed).
@@ -173,14 +177,88 @@ class BasePlot:
 
         # normalize x to plain datetimes so JSON serialization works
         x_vals = pd.to_datetime(x).to_pydatetime().tolist()
+        # mimic Plotly's colorway assignment so we can reuse the color for overlays
+        trace_color = color or self.colorway[len(self.fig.data) % len(self.colorway)]
+        legendgroup = legendgroup or name
         self.fig.add_trace(
             go.Scatter(
                 x=x_vals,
                 y=list(y),
                 name=name,
                 mode=mode,
-                line=dict(width=width, dash=dash) if dash else dict(width=width),
+                legendgroup=legendgroup,
+                line=dict(color=trace_color, width=width, dash=dash) if dash else dict(color=trace_color, width=width),
                 hovertemplate=hovertemplate,
+            ),
+            row=row,
+            col=1,
+        )
+        if name:
+            self._trace_colors[name] = trace_color
+        return self
+
+    def plot_event_markers(
+        self,
+        x: Union[pd.Series, Iterable],
+        y: Union[pd.Series, Iterable],
+        *,
+        mask: Union[pd.Series, Iterable],
+        row: int = 1,
+        name: Optional[str] = None,
+        symbol: str = "circle",
+        size: int = 8,
+        hover_name: Optional[str] = None,
+        hover_units: Optional[str] = None,
+        color: Optional[str] = None,
+        legendgroup: Optional[str] = None,
+        opacity: float = 0.95,
+        show_in_legend: bool = False,
+    ) -> "BasePlot":
+        """
+        Plot markers on an existing line for the positions where `mask` is truthy.
+        This is useful for highlighting precipitation/irrigation days on the main panel.
+        """
+        assert self.fig is not None, "Call create_base() first."
+
+        x_series = pd.Series(pd.to_datetime(x))
+        y_series = pd.Series(y).reset_index(drop=True)
+        mask_series = pd.Series(mask).fillna(False).astype(bool).reset_index(drop=True)
+
+        if len(x_series) != len(y_series) or len(x_series) != len(mask_series):
+            raise ValueError("x, y, and mask must have the same length for event markers.")
+
+        event_mask = mask_series
+        if not event_mask.any():
+            return self
+
+        x_markers = x_series[event_mask].dt.to_pydatetime().tolist()
+        y_markers = y_series[event_mask].tolist()
+        legendgroup = legendgroup or name
+        # Prefer the color of the corresponding line if known
+        trace_color = color or (name and self._trace_colors.get(name)) or self.colorway[len(self.fig.data) % len(self.colorway)]
+
+        # hovertemplate = "%{x}<br>%{y}"
+        # if hover_units:
+        #     hovertemplate = f"%{{x}}<br>%{{y}} {hover_units}"
+        # if hover_name:
+        #     hovertemplate = f"{hover_name}<br>" + hovertemplate
+
+        self.fig.add_trace(
+            go.Scatter(
+                x=x_markers,
+                y=y_markers,
+                name=name,
+                mode="markers",
+                legendgroup=legendgroup,
+                marker=dict(
+                    symbol=symbol,
+                    size=size,
+                    color=trace_color,
+                    line=dict(color="#ffffff", width=1),
+                    opacity=opacity,
+                ),
+                hoverinfo="none",
+                showlegend=show_in_legend and bool(name),
             ),
             row=row,
             col=1,
@@ -193,7 +271,6 @@ class BasePlot:
     def plot_irrigation_events(
         self,
         times: Sequence[pd.Timestamp],
-        amounts_mm: Sequence[Number],
         *,
         row: int = 2,
         bar_width: Optional[pd.Timedelta] = None,
@@ -203,7 +280,6 @@ class BasePlot:
         """
         Plot irrigation as vertical bars in a subpanel (default: row 2).
         times: datetimes of the event starts
-        amounts_mm: event depths (mm)
         bar_width: width of the bars; if None, try to infer from median spacing
         """
         assert self.fig is not None, "Call create_base() first."
@@ -228,7 +304,7 @@ class BasePlot:
         self.fig.add_trace(
             go.Bar(
                 x=centers,
-                y=list(amounts_mm),
+                y=[1]*len(centers),
                 name=name,
                 opacity=opacity,
                 marker=dict(

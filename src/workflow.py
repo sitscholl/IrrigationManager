@@ -73,11 +73,41 @@ class WaterBalanceWorkflow:
                 wb_persisted = self.db.query_water_balance(field_id = field.id, start = self.season_start, end = self.season_end)
                 if wb_persisted:
                     wb_df = pd.DataFrame(
-                        [{"date": rec.date, "soil_storage": rec.soil_storage} for rec in wb_persisted]
+                        [
+                            {
+                                "date": rec.date,
+                                "soil_storage": rec.soil_storage,
+                                "irrigation": getattr(rec, "irrigation", 0.0),
+                                "precipitation": getattr(rec, "precipitation", 0.0),
+                            }
+                            for rec in wb_persisted
+                        ]
                     )
                     wb_df["date"] = pd.to_datetime(wb_df["date"])
+                    wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
+                    wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
                     wb_df = wb_df.set_index("date").sort_index()
                     self.plot.plot_line(wb_df.index, wb_df["soil_storage"], name=field.name)
+                    self.plot.plot_event_markers(
+                        wb_df.index,
+                        wb_df["soil_storage"],
+                        mask=wb_df["irrigation"] > 0,
+                        name=field.name,
+                        symbol="triangle-up",
+                        hover_name="Irrigation",
+                        hover_units="mm",
+                        show_in_legend=False,
+                    )
+                    self.plot.plot_event_markers(
+                        wb_df.index,
+                        wb_df["soil_storage"],
+                        mask=wb_df["precipitation"] > 5,
+                        name=field.name,
+                        symbol="diamond",
+                        hover_name="Precipitation",
+                        hover_units="mm",
+                        show_in_legend=False,
+                    )
                 else:
                     logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
             else:
@@ -117,6 +147,26 @@ class WaterBalanceWorkflow:
 
                     ## Plot
                     self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
+                    self.plot.plot_event_markers(
+                        field_wb.index,
+                        field_wb["soil_storage"],
+                        mask=field_wb["irrigation"] > 0,
+                        name=field.name,
+                        symbol="triangle-up",
+                        hover_name="Irrigation",
+                        hover_units="mm",
+                        show_in_legend=False,
+                    )
+                    self.plot.plot_event_markers(
+                        field_wb.index,
+                        field_wb["soil_storage"],
+                        mask=field_wb["precipitation"] > 0,
+                        name=field.name,
+                        symbol="diamond",
+                        hover_name="Precipitation",
+                        hover_units="mm",
+                        show_in_legend=False,
+                    )
 
                     logger.info(f"Calculated water-balance for field {field.name}")
                 except Exception as e:
