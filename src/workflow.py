@@ -87,27 +87,8 @@ class WaterBalanceWorkflow:
                     wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
                     wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
                     wb_df = wb_df.set_index("date").sort_index()
-                    self.plot.plot_line(wb_df.index, wb_df["soil_storage"], name=field.name)
-                    self.plot.plot_event_markers(
-                        wb_df.index,
-                        wb_df["soil_storage"],
-                        mask=wb_df["irrigation"] > 0,
-                        name=field.name,
-                        symbol="triangle-up",
-                        hover_name="Irrigation",
-                        hover_units="mm",
-                        show_in_legend=False,
-                    )
-                    self.plot.plot_event_markers(
-                        wb_df.index,
-                        wb_df["soil_storage"],
-                        mask=wb_df["precipitation"] > 5,
-                        name=field.name,
-                        symbol="diamond",
-                        hover_name="Precipitation",
-                        hover_units="mm",
-                        show_in_legend=False,
-                    )
+                    self.plot.plot_waterbalance(wb_df, field_name=field.name)
+
                 else:
                     logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
             else:
@@ -146,27 +127,7 @@ class WaterBalanceWorkflow:
                         logger.error(f"Error saving water balance for field {field.name}: {e}")
 
                     ## Plot
-                    self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
-                    self.plot.plot_event_markers(
-                        field_wb.index,
-                        field_wb["soil_storage"],
-                        mask=field_wb["irrigation"] > 0,
-                        name=field.name,
-                        symbol="triangle-up",
-                        hover_name="Irrigation",
-                        hover_units="mm",
-                        show_in_legend=False,
-                    )
-                    self.plot.plot_event_markers(
-                        field_wb.index,
-                        field_wb["soil_storage"],
-                        mask=field_wb["precipitation"] > 0,
-                        name=field.name,
-                        symbol="diamond",
-                        hover_name="Precipitation",
-                        hover_units="mm",
-                        show_in_legend=False,
-                    )
+                    self.plot.plot_waterbalance(field_wb, field_name=field.name)
 
                     logger.info(f"Calculated water-balance for field {field.name}")
                 except Exception as e:
