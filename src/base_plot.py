@@ -3,6 +3,9 @@ from typing import Iterable, Optional, Sequence, Union
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import logging
+
+logger = logging.getLogger(__name__)
 
 Number = Union[int, float]
 
@@ -207,8 +210,8 @@ class BasePlot:
         name: Optional[str] = None,
         symbol: str = "circle",
         size: int = 8,
-        hover_name: Optional[str] = None,
-        hover_units: Optional[str] = None,
+        # hover_name: Optional[str] = None,
+        # hover_units: Optional[str] = None,
         color: Optional[str] = None,
         legendgroup: Optional[str] = None,
         opacity: float = 0.95,
@@ -257,7 +260,8 @@ class BasePlot:
                     line=dict(color="#ffffff", width=1),
                     opacity=opacity,
                 ),
-                hoverinfo="none",
+                hoverinfo='none',
+                # hovertemplate=hovertemplate,
                 showlegend=show_in_legend and bool(name),
             ),
             row=row,
@@ -265,82 +269,60 @@ class BasePlot:
         )
         return self
 
-    # -------------------------------
-    # Irrigation events
-    # -------------------------------
-    def plot_irrigation_events(
-        self,
-        times: Sequence[pd.Timestamp],
-        *,
-        row: int = 2,
-        bar_width: Optional[pd.Timedelta] = None,
-        name: str = "Irrigation (mm)",
-        opacity: float = 0.5,
-    ) -> "BasePlot":
-        """
-        Plot irrigation as vertical bars in a subpanel (default: row 2).
-        times: datetimes of the event starts
-        bar_width: width of the bars; if None, try to infer from median spacing
-        """
-        assert self.fig is not None, "Call create_base() first."
-        if not len(times):
-            return self
+    def plot_waterbalance(
+        self, waterbalance_data: pd.DataFrame, field_name: str, precip_limit: Number = 5,
+        ):
+        
+        if self.fig is None:
+            raise ValueError("Figure not initialized. Call create_base() before plotting.")
+        if waterbalance_data is None or waterbalance_data.empty:
+            logger.warning("waterbalance_data is empty; nothing to plot.")
+            return
 
-        # Infer a sensible width if not provided
-        if bar_width is None and len(times) > 1:
-            s = pd.Series(pd.to_datetime(times)).sort_values().diff().median()
-            if pd.isna(s) or s is pd.NaT:
-                s = pd.Timedelta(hours=6)
-            bar_width = s * 0.8
-        if bar_width is None:
-            bar_width = pd.Timedelta(hours=6)
+        required_cols = {"soil_storage", "irrigation", "precipitation"}
+        missing = required_cols - set(waterbalance_data.columns)
+        if missing:
+            logger.warning(f"Missing columns for water balance plot: {', '.join(sorted(missing))}. Cannot plot")
+            return
 
-        centers = pd.to_datetime(times)
-        lefts = centers - bar_width / 2
-        rights = centers + bar_width / 2
+        # Normalize to datetime index for consistent plotting and tooltips
+        if not isinstance(waterbalance_data.index, pd.DatetimeIndex):
+            try:
+                waterbalance_data = waterbalance_data.copy()
+                waterbalance_data.index = pd.to_datetime(waterbalance_data.index)
+            except Exception as e:
+                logger.warning(f"waterbalance_data index must be datetime-like for plotting Cannot convert: {e}.")
+                return
 
-        # Plot as a histogram-like bar trace
-        centers = pd.to_datetime(times).to_pydatetime().tolist()
-        self.fig.add_trace(
-            go.Bar(
-                x=centers,
-                y=[1]*len(centers),
-                name=name,
-                opacity=opacity,
-                marker=dict(
-                    color="#5c9be6",
-                    line=dict(width=0),
-                ),
-                width=[(r - l).total_seconds() * 1000 for l, r in zip(lefts, rights)],  # ms
-                hovertemplate="%{x}<br>%{y} mm",
-            ),
-            row=row,
-            col=1,
+        wb = waterbalance_data.sort_index()
+        wb["irrigation"] = wb["irrigation"].fillna(0.0)
+        wb["precipitation"] = wb["precipitation"].fillna(0.0)
+
+        self.plot_line(wb.index, wb["soil_storage"], name=field_name)
+        
+        self.plot_event_markers(
+            wb.index,
+            wb["soil_storage"],
+            mask=wb["irrigation"] > 0,
+            name=field_name,
+            symbol="triangle-up",
+            # hover_name="Irrigation",
+            # hover_units="mm",
+            show_in_legend=False,
         )
-        # Keep the irrigation panel clean and focused on the bars
-        self.fig.update_yaxes(
-            title_text=name,
-            showgrid=False,
-            zeroline=False,
-            rangemode="tozero",
-            row=row,
-            col=1,
+        
+        self.plot_event_markers(
+            wb.index,
+            wb["soil_storage"],
+            mask=wb["precipitation"] > precip_limit,
+            name=field_name,
+            symbol="diamond",
+            # hover_name="Precipitation",
+            # hover_units="mm",
+            show_in_legend=False,
         )
-        return self
 
-    # -------------------------------
-    # Misc helpers
-    # -------------------------------
-    def set_yaxis_title(self, title: str, *, row: int = 1) -> "BasePlot":
-        assert self.fig is not None, "Call create_base() first."
-        self.fig.update_yaxes(title_text=title, row=row, col=1)
         return self
-
-    def render_streamlit(self, st, *, use_container_width: bool = True, height: int = 600):
-        """Convenience wrapper for Streamlit."""
-        assert self.fig is not None, "Call create_base() first."
-        self.fig.update_layout(height=height)
-        st.plotly_chart(self.fig, use_container_width=use_container_width)
 
 if __name__ == '__main__':
     # app.py
