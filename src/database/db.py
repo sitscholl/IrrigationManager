@@ -2,7 +2,7 @@ import datetime
 import logging
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, List, Optional
+from typing import Generator, List, Optional, Tuple
 
 import yaml
 from sqlalchemy import create_engine
@@ -107,7 +107,7 @@ class IrrigDB:
         root_depth_cm: float = 30,
         area_ha: float | None = None,
         p_allowable: float | None = 0,
-    ) -> Optional[models.Field]:
+    ) -> Tuple[Optional[models.Field], bool]:
         """
         Add a new field or update an existing one.
         """
@@ -118,6 +118,7 @@ class IrrigDB:
         area_ha_value = float(area_ha) if area_ha is not None else None
         p_allowable_value = float(p_allowable) if p_allowable is not None else 0
 
+        updated = False
         try:
             with self.session_scope() as session:
                 field = self._get_field_by_name(session, name)
@@ -135,8 +136,6 @@ class IrrigDB:
                     )
                     session.add(field)
                 else:
-                    updated = False
-
                     if field.reference_station != reference_station:
                         field.reference_station = reference_station
                         updated = True
@@ -158,15 +157,15 @@ class IrrigDB:
 
                     if not updated:
                         logger.debug("No changes for field %s; skipping update", name)
-                        return field
+                        return (field, updated)
 
                 session.flush()  # ensure primary key is populated for new records
-                return field
+                return (field, updated)
         except Exception:
             logger.exception("Failed to persist field %s", name)
-            return None
+            return (None, updated)
 
-    def load_fields_from_config(self, config_path: str = "config/fields.yaml") -> None:
+    def load_fields_from_config(self, config_path: str = "config/fields.yaml") -> bool:
         """
         Load fields from a YAML file and upsert them into the database.
         """
@@ -187,6 +186,7 @@ class IrrigDB:
             logger.error("Field configuration in %s must be a mapping of field names to attributes.", config_file)
             return
 
+        any_updated = False
         for field_name, field_data in field_config.items():
             if not isinstance(field_data, dict):
                 logger.warning("Skipping field %s because its configuration is not a mapping.", field_name)
@@ -201,7 +201,7 @@ class IrrigDB:
                 )
                 continue
 
-            self.add_field(
+            _, updated = self.add_field(
                 name=field_name,
                 reference_station=field_data["reference_station"],
                 soil_type=field_data["soil_type"],
@@ -210,6 +210,9 @@ class IrrigDB:
                 area_ha=field_data.get("area_ha"),
                 p_allowable=field_data.get("p_allowable", 0),
             )
+            if updated:
+                any_updated = True
+        return any_updated
 
     def query_irrigation_events(
         self, field_name: str, date: datetime.date | None = None
@@ -332,6 +335,19 @@ class IrrigDB:
         with self.session_scope() as session:
             return self._get_latest_water_balance(session, field_id)
 
+    def clear_water_balance(self) -> int:
+        """
+        Delete all water balance entries. Returns number of rows deleted.
+        """
+        try:
+            with self.session_scope() as session:
+                deleted = session.query(models.WaterBalance).delete(synchronize_session=False)
+                logger.info("Cleared %s water balance rows from database", deleted)
+                return deleted
+        except Exception:
+            logger.exception("Failed to clear water balance data")
+            return 0
+
     def add_water_balance(self, water_balance: pd.DataFrame, field_id: int | None = None):
         """
         Upsert water balance records from a dataframe.
@@ -413,7 +429,8 @@ class IrrigDB:
                 session.merge(models.WaterBalance(**record))
             return len(records)
 
-
+    def clear_water_balance(self):
+        pass
 
     def close(self) -> None:
         """

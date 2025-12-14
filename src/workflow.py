@@ -53,7 +53,11 @@ class WaterBalanceWorkflow:
 
         logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields from {self.season_start} to {self.season_end}.')
 
-    def run(self):
+    def run(self, force: bool = False):
+
+        ## Delete existing data if force
+        if force:
+            self.db.clear_water_balance()
 
         for field in self.fields:
 
