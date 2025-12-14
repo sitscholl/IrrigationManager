@@ -63,6 +63,29 @@ class MeteoHandler:
         # Structure: {station_id: {"station": Station, "start": Timestamp, "end": Timestamp, "metadata": dict}}
         self.station_cache: dict[str, dict[str, Any]] = {}
 
+    @staticmethod
+    def _to_utc(ts: pd.Timestamp) -> pd.Timestamp:
+        """
+        Ensure timestamps are UTC-aware to match stored station data indices.
+        """
+        if ts.tzinfo is None:
+            return ts.tz_localize("UTC")
+        return ts.tz_convert("UTC")
+
+    @staticmethod
+    def _margin_from_resampler(resampler: MeteoResampler | None) -> pd.Timedelta:
+        """
+        Return a conservative margin equal to the resampler frequency to handle
+        APIs that are end-exclusive. Falls back to 0 if freq cannot be parsed.
+        """
+        if resampler is None or resampler.freq is None:
+            return pd.Timedelta(0)
+        try:
+            offset = pd.tseries.frequencies.to_offset(resampler.freq)
+            return pd.Timedelta(offset)
+        except Exception:
+            return pd.Timedelta(0)
+
     @property
     def output_schema(self) -> pa.DataFrameSchema:
         """
@@ -218,7 +241,7 @@ class MeteoHandler:
             provider: str, 
             station_id: str, 
             start: datetime | str, 
-            end: datetime | str, 
+            end: datetime | str, #non inclusive
             resampler: MeteoResampler | None = None
         ) -> Optional[Station]:
         
@@ -227,17 +250,22 @@ class MeteoHandler:
         if isinstance(end, str):
             end = pd.to_datetime(end, dayfirst=True)
 
+        start = self._to_utc(pd.to_datetime(start))
+        end = self._to_utc(pd.to_datetime(end))
+
         if start >= end:
             raise ValueError("start must be before end")
 
         cache_entry = self.station_cache.get(station_id)
         cached_station = cache_entry["station"] if cache_entry else None
-        cached_start = cache_entry["start"] if cache_entry else None
-        cached_end = cache_entry["end"] if cache_entry else None
+        cached_start = self._to_utc(cache_entry["start"]) if cache_entry else None
+        cached_end = self._to_utc(cache_entry["end"]) if cache_entry else None
         cached_metadata = cache_entry["metadata"] if cache_entry else {}
 
-        needs_before = cached_start is None or start < cached_start
-        needs_after = cached_end is None or end > cached_end
+        margin = self._margin_from_resampler(resampler)
+
+        needs_before = cached_start is None or start < (cached_start - margin)
+        needs_after = cached_end is None or end > (cached_end + margin if cached_end is not None else end)
 
         fetch_windows = []
         if cached_station is None:
@@ -246,7 +274,8 @@ class MeteoHandler:
             if needs_before:
                 fetch_windows.append((start, cached_start))
             if needs_after:
-                fetch_windows.append((cached_end, end))
+                window_start = (cached_end + margin) if cached_end is not None else start
+                fetch_windows.append((window_start, end))
 
         station = cached_station
         metadata = cached_metadata
@@ -303,7 +332,7 @@ class MeteoHandler:
         }
 
         # Return a slice without mutating cached data
-        sliced_data = station.data.loc[(station.data.index >= start) & (station.data.index <= end)].copy()
+        sliced_data = station.data.loc[(station.data.index >= start) & (station.data.index < end)].copy()
         return Station(
             station.id,
             station.elevation,

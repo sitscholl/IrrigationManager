@@ -105,9 +105,9 @@ class WaterBalanceWorkflow:
                     ## Plot
                     self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
 
-                    logger.debug(f"Calculated water-balance for field {field.name}")
+                    logger.info(f"Calculated water-balance for field {field.name}")
                 except Exception as e:
-                    logger.error(f"Error calculating water balance for field {field.name}: {e}")
+                    logger.error(f"Error calculating water balance for field {field.name}: {e}", exc_info = True)
                     continue
 
             
