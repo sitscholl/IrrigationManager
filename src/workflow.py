@@ -3,7 +3,7 @@ import pandas as pd
 from dataclasses import dataclass
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .field import FieldHandler
 from .irrigation import FieldIrrigation
@@ -55,41 +55,58 @@ class WaterBalanceWorkflow:
 
     def run(self):
 
-        ## Query Meteo Data
-        reference_stations = set([i.reference_station for i in self.fields])
-        stations = self.runtime_context.meteo_handler.query(
-            provider = "SBR",
-            station_ids = reference_stations,
-            start = self.season_start,
-            end = min(datetime.today(), self.season_end),
-            resampler = self.runtime_context.resampler
-        )
-
-        ## Calculate evapotranspiration
-        for st in stations:
-            st.data = st.data.join(self.runtime_context.et_calculator.calculate(st, correct = True))
-
-        ## Calculate water balance for each field
         for field in self.fields:
-            try:
-                station = [i for i in stations if i.id == field.reference_station]
-                if len(station) == 0:
-                    logger.warning(f"Reference station {field.reference_station} for field {field.name} not found. Skipping")
-                    continue
 
-                station = station[0]
+            ## Check existing data
+            latest_balance = self.db.latest_water_balance(field.id)
+            next_date = pd.to_datetime(latest_balance.date) + timedelta(days=1) if latest_balance else self.season_start
+            start_date = max(self.season_start, next_date)
+            initial_storage = latest_balance.soil_storage if latest_balance else None
+            period_end = min(pd.Timestamp.today(), self.season_end)
 
-                field_capacity = field.get_field_capacity() #todo change humus_pct
-                field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
+            if start_date > period_end:
+                logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
+            else:
+                try:
+                    logger.info(f"Found existing data for field {field.name}. Starting calculation from {start_date.date()}")
 
-                field_wb = field.calculate_water_balance(
-                    station.data, field_irrigation
+                    ## Query Meteo Data
+                    reference_station = field.reference_station
+                    station = self.runtime_context.meteo_handler.query(
+                        provider = "SBR",
+                        station_ids = reference_station,
+                        start = start_date,
+                        end = period_end,
+                        resampler = self.runtime_context.resampler
                     )
 
-                self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
-                logger.debug(f"Calculated water-balance for field {field.name}")
-            except Exception as e:
-                logger.error(f"Error calculating water balance for field {field.name}: {e}")
-                continue
+                    if station is None:
+                        logger.info(f"No meteo data available from {start_date.date()} for field {field.name}; skipping.")
+                        continue
+
+                    ## Calculate evapotranspiration
+                    station.data = station.data.join(self.runtime_context.et_calculator.calculate(station, correct = True))
+
+                    ## Calculate water balance
+                    field_capacity = field.get_field_capacity()
+                    field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
+
+                    field_wb = field.calculate_water_balance(
+                        station, field_irrigation, initial_storage=initial_storage
+                        )
+                    
+                    ## Persist water balance
+                    try:
+                        updated_rows = self.db.add_water_balance(field_wb, field_id = field.id)
+                    except Exception as e:
+                        logger.error(f"Error saving water balance for field {field.name}: {e}")
+
+                    ## Plot
+                    self.plot.plot_line(field_wb.index, field_wb["soil_storage"], name=field.name)
+                    
+                    logger.debug(f"Calculated water-balance for field {field.name}")
+                except Exception as e:
+                    logger.error(f"Error calculating water balance for field {field.name}: {e}")
+                    continue
 
             

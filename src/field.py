@@ -118,7 +118,12 @@ class FieldHandler:
         self.field_capacity = capacity
         return capacity
 
-    def calculate_water_balance(self, station_data: pd.DataFrame, field_irrigation: FieldIrrigation | None = None):
+    def calculate_water_balance(
+        self,
+        station_data: pd.DataFrame,
+        field_irrigation: FieldIrrigation | None = None,
+        initial_storage: float | None = None,
+    ):
         """
         Calculate the daily water balance of the field. The water balance is defined as incoming water (precipitation + irrigation)
         minus the actual evapotranspiration during a particular day. The maximum water balance corresponds to the soil field capacity of
@@ -156,7 +161,7 @@ class FieldHandler:
         capacity = self.field_capacity.nfk_total_mm
 
         storage = []
-        current_storage = capacity
+        current_storage = capacity if initial_storage is None else max(0.0, min(capacity, initial_storage))
         for delta in net:
             current_storage = max(0.0, min(capacity, current_storage + delta))
             storage.append(current_storage)
@@ -174,6 +179,7 @@ class FieldHandler:
         )
         water_balance["field_capacity"] = capacity
         water_balance["deficit"] = capacity - water_balance["soil_storage"]
+        water_balance["field_id"] = self.id
 
         if self.p_allowable:
             raw = self.p_allowable * capacity

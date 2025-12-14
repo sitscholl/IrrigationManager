@@ -6,6 +6,7 @@ from typing import Generator, List, Optional
 
 import yaml
 from sqlalchemy import create_engine
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, sessionmaker
 import pandas as pd
 
@@ -48,6 +49,17 @@ class IrrigDB:
         return (
             session.query(models.Field)
             .filter(models.Field.name == name)
+            .one_or_none()
+        )
+
+    def _get_latest_water_balance(
+        self, session: Session, field_id: int
+    ) -> Optional[models.WaterBalance]:
+        return (
+            session.query(models.WaterBalance)
+            .filter(models.WaterBalance.field_id == field_id)
+            .order_by(models.WaterBalance.date.desc())
+            .limit(1)
             .one_or_none()
         )
 
@@ -219,7 +231,7 @@ class IrrigDB:
                 )
                 return None
 
-        return self._get_irrigation_events(session, field.id, date)
+            return self._get_irrigation_events(session, field.id, date)
 
     def add_irrigation_event(
         self,
@@ -297,6 +309,9 @@ class IrrigDB:
 
             if field_name is not None:
                 field = self._get_field_by_name(session, field_name)
+                if field is None:
+                    logger.warning("Field %s does not exist. Cannot query water balance", field_name)
+                    return []
                 query = query.filter(models.WaterBalance.field_id == field.id)
 
             if field_id is not None:
@@ -308,50 +323,95 @@ class IrrigDB:
             if end is not None:
                 query = query.filter(models.WaterBalance.date <= end)
 
-        return query.all()
+            return query.all()
 
-    def add_water_balance(self, water_balance: pd.DataFrame):
-
-        required_cols = ['field_id', 'precipitaton', 'irrigation', 'evapotranspiration', 'incoming', 'net', 'soil_storage', 'field_capacity', 'deficit', 'readily_available_water', 'below_raw']
-        if not all(col in water_balance.columns for col in required_cols):
-            missing_cols = [col for col in required_cols if col not in water_balance.columns]
-            logger.warning(f"Not all required cols to save the water balance in the database are present. Missing: {missing_cols}. Skipping insertion into database.")
-            return None
-
-        additional_cols = [col for col in water_balance.columns if col not in required_cols]
-        if additional_cols:
-            logger.warning(f"Additional columns {additional_cols} will be ignored when saving the water balance in the database.")
-            water_balance = water_balance[required_cols]
-
-        if not isinstance(water_balance.index, pd.DatetimeIndex):
-            logger.warning(f"Water balance index must be a pandas DatetimeIndex. Got {type(water_balance.index)} Skipping insertion into database.")
-            return None
-        
-        start = water_balance.index.min()
-        end = water_balance.index.max()
+    def latest_water_balance(self, field_id: int) -> Optional[models.WaterBalance]:
+        """
+        Return the latest water balance entry for a field, or None if absent.
+        """
         with self.session_scope() as session:
-            for field_id, field_data in water_balance.groupby('field_id'):
-                try:
-                    database_existing = self.query_water_balance(field_id = field_id, start = start, end = end)
-                    missing_rows = field_data[~field_data.index.isin([i.date for i in database_existing])]
-                    existing_rows = field_data[field_data.index.isin([i.date for i in database_existing])]
-                    
-                    if not missing_rows.empty:
-                        session.add_all([
-                            models.WaterBalance(**i.to_dict()) for i in missing_rows.itertuples()
-                        ])
-                        session.commit()
-                        logger.info(f"Added {len(missing_rows)} rows for field {field_id} to the database.")
-                    
-                    if not existing_rows.empty:
-                        session.add_all([
-                            models.WaterBalance(**i.to_dict()) for i in existing_rows.itertuples()
-                        ])
-                        session.commit()
-                        logger.info(f"Updated {len(existing_rows)} rows for field {field_id} in the database.")
-                except Exception as e:
-                    logger.error(f"Error saving water balance for field {field_id}: {e}")
-                    continue
+            return self._get_latest_water_balance(session, field_id)
+
+    def add_water_balance(self, water_balance: pd.DataFrame, field_id: int | None = None):
+        """
+        Upsert water balance records from a dataframe.
+        Returns the number of rows inserted/updated.
+        """
+        df = water_balance.copy()
+        if field_id is not None:
+            df["field_id"] = field_id
+
+        required_cols = [
+            'field_id',
+            'precipitation',
+            'irrigation',
+            'evapotranspiration',
+            'incoming',
+            'net',
+            'soil_storage',
+            'field_capacity',
+            'deficit',
+        ]
+        optional_cols = ['readily_available_water', 'below_raw']
+
+        missing_required = [col for col in required_cols if col not in df.columns]
+        if missing_required:
+            logger.warning(
+                "Not all required columns to save the water balance are present. Missing: %s. "
+                "Skipping insertion into database.",
+                ", ".join(missing_required),
+            )
+            return 0
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            logger.warning(
+                "Water balance index must be a pandas DatetimeIndex. Got %s. "
+                "Skipping insertion into database.",
+                type(df.index),
+            )
+            return 0
+
+        for col in optional_cols:
+            if col not in df.columns:
+                df[col] = None
+
+        extra_cols = [col for col in df.columns if col not in required_cols + optional_cols]
+        if extra_cols:
+            logger.info(
+                "Additional columns %s will be ignored when saving the water balance.",
+                ", ".join(extra_cols),
+            )
+
+        df = df.rename_axis("date").reset_index()
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        df = df[["date"] + required_cols + optional_cols]
+
+        records = df.to_dict(orient="records")
+        if not records:
+            logger.info("Water balance dataframe is empty. Nothing to persist.")
+            return 0
+
+        # Use SQLite upsert for performance; fall back to per-row merge for other dialects.
+        if self.engine.dialect.name == "sqlite":
+            stmt = sqlite_insert(models.WaterBalance).values(records)
+            update_cols = {
+                col: getattr(stmt.excluded, col)
+                for col in required_cols + optional_cols
+                if col not in ("field_id", "date")
+            }
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[models.WaterBalance.field_id, models.WaterBalance.date],
+                set_=update_cols,
+            )
+
+            with self.session_scope() as session:
+                result = session.execute(stmt)
+                return result.rowcount or 0
+
+        with self.session_scope() as session:
+            for record in records:
+                session.merge(models.WaterBalance(**record))
+            return len(records)
 
 
 

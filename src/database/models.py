@@ -21,6 +21,11 @@ class Field(Base):
         back_populates='field',
         cascade='all, delete-orphan'
     )
+    water_balance = relationship(
+        'WaterBalance',
+        back_populates='field',
+        cascade='all, delete-orphan'
+    )
 
     def __repr__(self) -> str:
         return f"Field(id={self.id!r}, name={self.name!r})"
@@ -47,7 +52,7 @@ class WaterBalance(Base):
 
     date = Column(Date, primary_key=True)
     field_id = Column(Integer, ForeignKey('fields.id'), primary_key=True)
-    precipitaton = Column(Float, nullable=False)
+    precipitation = Column(Float, nullable=False)
     irrigation = Column(Float, nullable=False)
     evapotranspiration = Column(Float, nullable=False)
     incoming = Column(Float, nullable=False)

@@ -59,6 +59,8 @@ class MeteoHandler:
         self.et0_calculator = et0_calculator
         self._session = requests.Session()
 
+        self.station_cache = {}
+
     @property
     def output_schema(self) -> pa.DataFrameSchema:
         """
@@ -212,7 +214,7 @@ class MeteoHandler:
     def query(
             self, 
             provider: str, 
-            station_ids: Sequence[str], 
+            station_id: str, 
             start: datetime | str, 
             end: datetime | str, 
             resampler: MeteoResampler | None = None
@@ -226,31 +228,33 @@ class MeteoHandler:
         if start >= end:
             raise ValueError("start must be before end")
 
-        stations: list[Station] = []
-        for station in station_ids:
+        if station_id not in self.station_cache:
             try:
-                df, metadata = self._get_data(provider, station, start, end)
+                df, metadata = self._get_data(provider, station_id, start, end)
 
                 if df.empty:
-                    logger.warning("No data returned for station %s", station)
-                    continue
+                    logger.warning("No data returned for station %s", station_id)
+                    return None
 
                 df = self._fill_solar_radiation(df, start, end)
 
                 validated_df = self._validate(df)
-                stations.append(Station(station, metadata["elevation"], metadata["latitude"], metadata["longitude"], validated_df))
-                logger.debug("Fetched data for station %s", station)
+                validated_df = resampler.resample(validated_df)
+
+                station_obj = Station(station_id, metadata["elevation"], metadata["latitude"], metadata["longitude"], validated_df)
+                self.station_cache[station_id] = station_obj
+                
+                logger.debug("Fetched data for station %s", station_id)
             except SchemaError as exc:
-                logger.error("Schema validation failed for station %s: %s", station, exc)
+                logger.error("Schema validation failed for station %s: %s", station_id, exc)
+                self.station_cache.pop(station_id, None)
+                return
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Unexpected error while fetching data for station %s: %s", station, exc)
+                logger.error("Unexpected error while fetching data for station %s: %s", station_id, exc)
+                self.station_cache.pop(station_id, None)
+                return
 
-        if resampler is not None:
-            for i in stations:
-                i.data = resampler.resample(i.data)
-
-        logger.info(f"Fetched data for {len(stations)} stations")
-        return stations
+        return self.station_cache[station_id]
 
     def calculate_et(self, stations, et_calculator, correct: bool = True):
         """
