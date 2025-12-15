@@ -20,81 +20,134 @@ def _load_rows(db):
     ]
 
 
+def build_field_form():
+    with ui.row().classes('w-full justify-center items-start gap-4 flex-wrap') as container:
+        with ui.column().classes('min-w-[220px] gap-2'):
+            name = ui.input('Name')
+            ref = ui.input('Reference station')
+            soil = ui.input('Soil type')
+        with ui.column().classes('min-w-[220px] gap-2'):
+            humus = ui.number('Humus %', value=2.0)
+            root = ui.number('Root depth (cm)', value=30)
+            area = ui.number('Area (ha)', value=None)
+        with ui.column().classes('min-w-[220px] gap-2'):
+            p_allow = ui.number('p_allowable (0-1)', value=0.4)
+    return {
+        'container': container,
+        'name': name,
+        'ref': ref,
+        'soil': soil,
+        'humus': humus,
+        'root': root,
+        'area': area,
+        'p_allow': p_allow,
+    }
+
+
+def read_form(frm):
+    return dict(
+        name=frm['name'].value,
+        reference_station=frm['ref'].value,
+        soil_type=frm['soil'].value,
+        humus_pct=frm['humus'].value or 0,
+        root_depth_cm=frm['root'].value or 30,
+        area_ha=frm['area'].value,
+        p_allowable=frm['p_allow'].value or 0,
+    )
+
+
 @ui.page('/fields')
 def fields():
     add_header()
     db = get_db()
-
-    selected_field_id: int | None = None
+    selected = {'row': None}
 
     def refresh():
         table.rows = _load_rows(db)
 
+    def require_selection():
+        sel = table.selected
+        if not sel:
+            ui.notify('Bitte zuerst ein Feld auswaehlen', color='red')
+            return None
+        row = sel[0] if isinstance(sel, list) else sel
+        selected['row'] = row
+        return row
+
+    # --- Add ---
     def add_field():
-        if not name.value or not ref.value or not soil.value:
+        data = read_form(add_form)
+        if not data['name'] or not data['reference_station'] or not data['soil_type']:
             ui.notify('Name, Station und Bodenart sind Pflichtfelder', color='red')
             return
-        db.add_field(
-            name=name.value,
-            reference_station=ref.value,
-            soil_type=soil.value,
-            humus_pct=humus.value or 0,
-            root_depth_cm=root.value or 30,
-            area_ha=area.value,
-            p_allowable=p_allow.value or 0,
-        )
+        db.add_field(**data)
         ui.notify('Gespeichert', color='green')
         refresh()
         add_dialog.close()
 
-    def ask_delete():
-        nonlocal selected_field_id
-        selection = table.selected
-        if not selection:
-            ui.notify('Bitte zuerst ein Feld auswählen', color='red')
+    # --- Edit ---
+    def open_edit():
+        row = require_selection()
+        if not row:
             return
-        selected = selection[0] if isinstance(selection, list) else selection
-        selected_field_id = selected.get('id')
-        remove_label.text = f"Soll \"{selected.get('name', '')}\" gelöscht werden?"
-        remove_dialog.open()
+        edit_form['name'].value = row.get('name')
+        edit_form['ref'].value = row.get('reference_station')
+        edit_form['soil'].value = row.get('soil_type')
+        edit_form['humus'].value = row.get('humus_pct')
+        edit_form['root'].value = row.get('root_depth_cm')
+        edit_form['area'].value = row.get('area_ha')
+        edit_form['p_allow'].value = row.get('p_allowable')
+        edit_dialog.open()
 
-    def delete_selected():
-        nonlocal selected_field_id
-        if selected_field_id is None:
-            ui.notify('Kein Feld ausgewählt', color='red')
+    def edit_field():
+        row = selected['row']
+        if not row:
+            ui.notify('Kein Feld ausgewaehlt', color='red')
             return
-        if db.delete_field(selected_field_id):
-            ui.notify('Gelöscht', color='green')
+        data = read_form(edit_form)
+        db.add_field(**data)
+        ui.notify('Aktualisiert', color='green')
+        refresh()
+        edit_dialog.close()
+
+    # --- Delete ---
+    def open_delete():
+        row = require_selection()
+        if not row:
+            return
+        remove_label.text = f"Soll \"{row.get('name', '')}\" geloescht werden?"
+        delete_dialog.open()
+
+    def delete_field():
+        row = selected['row']
+        if not row:
+            ui.notify('Kein Feld ausgewaehlt', color='red')
+            return
+        if db.delete_field(row['id']):
+            ui.notify('Geloescht', color='green')
             refresh()
         else:
             ui.notify('Feld nicht gefunden', color='red')
-        selected_field_id = None
-        remove_dialog.close()
+        delete_dialog.close()
+        selected['row'] = None
 
-    # Dialog: add field
-    with ui.dialog() as add_dialog, ui.card().classes('m-auto'):
-        ui.markdown('## Feld hinzufügen')
-        with ui.row().classes('w-full justify-center items-start gap-4 flex-wrap'):
-            with ui.column().classes('min-w-[220px] gap-2'):
-                name = ui.input('Name')
-                ref = ui.input('Reference station')
-                soil = ui.input('Soil type')
-            with ui.column().classes('min-w-[220px] gap-2'):
-                humus = ui.number('Humus %', value=2.0)
-                root = ui.number('Root depth (cm)', value=30)
-                area = ui.number('Area (ha)', value=None)
-            with ui.column().classes('min-w-[220px] gap-2'):
-                p_allow = ui.number('p_allowable (0-1)', value=0.4)
-        with ui.row():
-            ui.button('Submit', on_click=add_field).props('color=green')
-            ui.button('Close', on_click=add_dialog.close).props('color=red')
+    # Dialogs
+    with ui.dialog() as edit_dialog, ui.card().classes("m-auto"):
+        ui.markdown('## Feld bearbeiten')
+        edit_form = build_field_form()
+        ui.button('Speichern', on_click=edit_field)
 
-    # Dialog: remove field
-    with ui.dialog() as remove_dialog, ui.card().classes('m-auto'):
-        remove_label = ui.label().classes('m-auto')
-        with ui.row().classes('m-auto row').style('width: 100%;'):
-            ui.button('Yes', on_click=delete_selected).props('color=green').classes('col')
-            ui.button('No', on_click=remove_dialog.close).props('color=red').classes('col')
+    with ui.dialog() as add_dialog, ui.card().classes("m-auto"):
+        ui.markdown('## Feld hinzufuegen')
+        add_form = build_field_form()
+        ui.button('Speichern', on_click=add_field)
+
+    with ui.dialog() as delete_dialog, ui.card().classes("m-auto items-stretch"):
+        ui.markdown('## Feld loeschen')
+        remove_label = ui.label()
+        with ui.row().classes('justify-center'):
+            ui.button('Ja', on_click=delete_field)
+            ui.button('Nein', on_click=delete_dialog.close)
 
     # Main card and table
     with ui.column().classes('w-full max-w-4xl mx-auto gap-3 items-stretch'):
@@ -117,4 +170,5 @@ def fields():
 
         with ui.row().classes('m-auto row').style('width: 100%;'):
             ui.button('Add', on_click=add_dialog.open).props('color=green').classes('col')
-            ui.button('Remove', on_click=ask_delete).props('color=red').classes('col')
+            ui.button('Edit', on_click=open_edit).props('color=orange').classes('col')
+            ui.button('Remove', on_click=open_delete).props('color=red').classes('col')
