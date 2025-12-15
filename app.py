@@ -9,6 +9,7 @@ from nicegui import ui, app
 
 from src.config import load_config
 from src.frontend.dashboard import get_fig
+from src.frontend import deps #initialize startup/shutdow hooks
 
 config = load_config('config/config.yaml')
 logging.config.dictConfig(config['logging'])
