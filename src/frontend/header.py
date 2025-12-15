@@ -4,8 +4,8 @@ def add_header() -> ui.button:
     """Create the page header."""
     menu_items = {
         'Dashboard': '/',
-        'Test1': '/#test1',
-        'Test2': '/#test2',
+        'Anlagen': '/fields',
+        'Bewässerung': '/irrigation',
     }
 
     with ui.header() \
