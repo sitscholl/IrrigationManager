@@ -44,7 +44,7 @@ async def dashboard():
     with ui.column().classes("w-full max-w-4xl mx-auto gap-3 items-stretch"):
 
         with ui.row().classes("w-full items-center justify-center"):
-            ui.label('Water balance').classes('w-full text-center text-3xl font-bold')
+            ui.markdown('## Water balance')
             # ui.button(
             #     'Re-run workflow',
             #     on_click=lambda: asyncio.create_task(load_and_render(force=True)),
