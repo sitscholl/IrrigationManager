@@ -437,6 +437,14 @@ class IrrigDB:
             logger.exception("Failed to clear water balance data")
             return 0
 
+    def delete_field(self, field_id: int) -> bool:
+        with self.session_scope() as session:
+            field = session.get(models.Field, field_id)
+            if not field:
+                return False
+            session.delete(field)
+            return True
+
     def close(self) -> None:
         """
         Dispose of the database engine connection pool.
