@@ -2,7 +2,7 @@ from nicegui import ui
 from .header import add_header
 from .deps import get_db
 # Import the reusable class
-from .crud import TableEditor 
+from .table_editor import TableEditor 
 
 # Define Schema
 FIELD_SCHEMA = [
