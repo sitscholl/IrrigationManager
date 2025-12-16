@@ -64,14 +64,11 @@ class IrrigDB:
         )
 
     def _get_irrigation_events(
-        self, session: Session, field_id: int, date: datetime.date | None = None
+        self, session: Session, field_id: int | None = None, date: datetime.date | None = None
     ) -> Optional[models.Irrigation]:
-        query = (
-            session.query(models.Irrigation)
-            .filter(
-                models.Irrigation.field_id == field_id,
-            )
-        )
+        query = session.query(models.Irrigation)
+        if field_id is not None:
+            query = query.filter(models.Irrigation.field_id == field_id)
 
         if date is not None:
             query = query.filter(models.Irrigation.date == date)
@@ -215,7 +212,7 @@ class IrrigDB:
         return updated_fields
 
     def query_irrigation_events(
-        self, field_name: str, date: datetime.date | None = None
+        self, field_name: str | None = None, date: datetime.date | None = None
     ) -> Optional[models.Irrigation]:
         """
         Retrieve an irrigation event by field name and (optional) date.
@@ -226,15 +223,19 @@ class IrrigDB:
             )
 
         with self.session_scope() as session:
-            field = self._get_field_by_name(session, field_name)
-            if field is None:
-                logger.warning(
-                    "Field %s does not exist. Cannot query irrigation event",
-                    field_name,
-                )
-                return None
+            if field_name is not None:
+                field = self._get_field_by_name(session, field_name)
+                if field is None:
+                    logger.warning(
+                        "Field %s does not exist. Cannot query irrigation event",
+                        field_name,
+                    )
+                    return None
+                field_id = field.id
+            else:
+                field_id = None
 
-            return self._get_irrigation_events(session, field.id, date)
+            return self._get_irrigation_events(session, field_id, date)
 
     def add_irrigation_event(
         self,
@@ -250,6 +251,9 @@ class IrrigDB:
             raise NotImplementedError(
                 'Only datetime.date objects are allowed in irrigation database'
             )
+
+        if isinstance(date, str):
+            date = pd.to_datetime(date).date()
 
         try:
             with self.session_scope() as session:
@@ -443,6 +447,14 @@ class IrrigDB:
             if not field:
                 return False
             session.delete(field)
+            return True
+
+    def delete_irrigation_event(self, event_id: int) -> bool:
+        with self.session_scoe() as session:
+            event = session.get(models.Irrigation, event_id)
+            if not event:
+                return False
+            session.delete(event)
             return True
 
     def close(self) -> None:
