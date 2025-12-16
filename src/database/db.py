@@ -243,62 +243,52 @@ class IrrigDB:
         date: datetime.date,
         method: str,
         amount: float = 100,
-    ) -> Optional[models.Irrigation]:
-        """
-        Add a new irrigation event or update an existing one.
-        """
-        if isinstance(date, datetime.datetime):
-            raise NotImplementedError(
-                'Only datetime.date objects are allowed in irrigation database'
-            )
-
+        id: int | None = None,
+    ) -> models.Irrigation:
+        
         if isinstance(date, str):
             date = pd.to_datetime(date).date()
 
-        try:
-            with self.session_scope() as session:
-                field = self._get_field_by_name(session, field_name)
-                if field is None:
-                    logger.error(
-                        "Field %s does not exist. Cannot add irrigation event",
-                        field_name,
-                    )
-                    return None
+        with self.session_scope() as session:
+            field = self._get_field_by_name(session, field_name)
+            if field is None:
+                raise ValueError(f"Field '{field_name}' not found")
 
-                events = self._get_irrigation_events(session, field.id, date)
+            # Logic: If ID is provided, update that specific row.
+            # If no ID, try to find by date/field (legacy logic) or create new.
+            event = None
+            
+            if id is not None:
+                event = session.get(models.Irrigation, id)
+                if not event:
+                     raise ValueError(f"Irrigation event {id} not found")
+            
+            # If no ID provided, check if one exists for this date/field (prevent duplicates)
+            if event is None:
+                existing = self._get_irrigation_events(session, field.id, date)
+                if existing:
+                    event = existing[0]
 
-                if len(events) == 0:
-                    logger.debug(
-                        "Adding new irrigation event for field %s on %s to database",
-                        field_name,
-                        date,
-                    )
-                    event = models.Irrigation(
-                        field_id=field.id,
-                        date=date,
-                        method=method,
-                        amount=amount,
-                    )
-                    session.add(event)
-                else:
-                    logger.debug(
-                        "Updating irrigation event for field %s on %s",
-                        field_name,
-                        date,
-                    )
-                    event = events[0] #TODO: Improve this to also handle the case where multiple events in one day
-                    event.method = method
-                    event.amount = amount
+            if event:
+                logger.debug("Updating irrigation event %s", event.id)
+                event.field_id = field.id 
+                event.date = date
+                event.method = method
+                event.amount = amount
+            else:
+                logger.debug("Creating new irrigation event")
+                event = models.Irrigation(
+                    field_id=field.id,
+                    date=date,
+                    method=method,
+                    amount=amount,
+                )
+                session.add(event)
 
-                session.flush()  # ensure primary key is populated for new records
-                return event
-        except Exception:
-            logger.exception(
-                "Failed to add irrigation event for field %s on %s",
-                field_name,
-                date,
-            )
-            return None
+            session.flush()
+            # Refresh to ensure we have the ID available if we need to return it
+            session.refresh(event) 
+            return event
 
     def query_water_balance(
         self, 
@@ -450,7 +440,7 @@ class IrrigDB:
             return True
 
     def delete_irrigation_event(self, event_id: int) -> bool:
-        with self.session_scoe() as session:
+        with self.session_scope() as session:
             event = session.get(models.Irrigation, event_id)
             if not event:
                 return False

@@ -51,21 +51,29 @@ class TableEditor:
             
             with ui.column().classes('w-full gap-2'):
                 for field in self.schema:
-                    # Determine input type
-                    if field.get('type') == 'number':
-                        ui.number(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
-                    elif field.get('type') == 'checkbox':
-                        ui.checkbox(field['label']).bind_value(self.form_data, field['name'])
-                    elif field.get('type') == 'date':
-                        ui.date_input(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
+                    label = field['label']
+                    key = field['name']
+                    ftype = field.get('type')
+                    
+                    if ftype == 'number':
+                        ui.number(label).bind_value(self.form_data, key).classes('w-full')
+                    elif ftype == 'checkbox':
+                        ui.checkbox(label).bind_value(self.form_data, key)
+                    elif ftype == 'date':
+                        ui.input(label).bind_value(self.form_data, key).props('type=date').classes('w-full')
+                    elif ftype == 'select':
+                        is_multi = field.get('multiple', False)
+                        sel = ui.select(options=field['options'], label=label, multiple=is_multi)
+                        sel.bind_value(self.form_data, key).classes('w-full')
+                        if is_multi:
+                            sel.props('use-chips') # Makes list items look nice
                     else:
-                        ui.input(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
+                        ui.input(label).bind_value(self.form_data, key).classes('w-full')
 
             with ui.row().classes('w-full justify-end mt-4'):
                 ui.button('Cancel', on_click=self.dialog.close).props('flat')
                 ui.button('Save', on_click=self.save_data)
 
-        # Initial data load
         self.refresh_table()
 
     def refresh_table(self):
@@ -86,11 +94,20 @@ class TableEditor:
 
     def _reset_form(self, defaults=None):
         self.form_data.clear()
-        # Always track ID (None for new, set for edit)
         self.form_data['id'] = None
+        
         for field in self.schema:
-            val = defaults.get(field['name']) if defaults else field.get('default')
-            self.form_data[field['name']] = val
+            name = field['name']
+            default_val = field.get('default')
+            
+            # Logic to handle defaults when Edit Mode provides existing data
+            if defaults and name in defaults:
+                val = defaults[name]
+                if field.get('multiple') and val is not None and not isinstance(val, list):
+                    val = [val]
+                self.form_data[name] = val
+            else:
+                self.form_data[name] = default_val
 
     def open_add_dialog(self):
         self._reset_form()
@@ -119,8 +136,8 @@ class TableEditor:
                 return
 
         try:
-            # Call the provided save callback
-            self.save_func(**{i:j for i,j in self.form_data.items() if i != 'id'})
+            self.save_func(**self.form_data)
+            
             ui.notify('Saved successfully', color='green')
             self.refresh_table()
             self.dialog.close()
