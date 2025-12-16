@@ -56,6 +56,8 @@ class TableEditor:
                         ui.number(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
                     elif field.get('type') == 'checkbox':
                         ui.checkbox(field['label']).bind_value(self.form_data, field['name'])
+                    elif field.get('type') == 'date':
+                        ui.date_input(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
                     else:
                         ui.input(field['label']).bind_value(self.form_data, field['name']).classes('w-full')
 
@@ -118,7 +120,7 @@ class TableEditor:
 
         try:
             # Call the provided save callback
-            self.save_func(**self.form_data)
+            self.save_func(**{i:j for i,j in self.form_data.items() if i != 'id'})
             ui.notify('Saved successfully', color='green')
             self.refresh_table()
             self.dialog.close()
