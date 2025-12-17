@@ -16,7 +16,6 @@ _build_lock = asyncio.Lock()
 def build_waterbalance_fig():
     cfg = load_config('config/config.yaml')
     db = IrrigDB(**cfg.get('database', {}))
-    db.load_fields_from_config(cfg.get('fields_config', 'config/fields.yaml'))
     wf = WaterBalanceWorkflow(cfg, db)
     wf.run()
     return wf.plot.fig

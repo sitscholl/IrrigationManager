@@ -104,6 +104,7 @@ class IrrigDB:
         root_depth_cm: float = 30,
         area_ha: float | None = None,
         p_allowable: float | None = 0,
+        **kwargs #swallow id when created via dashboard
     ) -> Tuple[Optional[models.Field], bool]:
         """
         Add a new field or update an existing one.
@@ -161,55 +162,6 @@ class IrrigDB:
         except Exception:
             logger.exception("Failed to persist field %s", name)
             return (None, updated)
-
-    def load_fields_from_config(self, config_path: str = "config/fields.yaml") -> bool:
-        """
-        Load fields from a YAML file and upsert them into the database.
-        """
-        config_file = Path(config_path)
-
-        if not config_file.exists():
-            logger.warning("Field configuration file %s not found. Skipping field sync.", config_file)
-            return
-
-        try:
-            with config_file.open("r", encoding="utf-8") as file:
-                field_config = yaml.safe_load(file) or {}
-        except Exception:
-            logger.exception("Failed to read field configuration from %s", config_file)
-            return
-
-        if not isinstance(field_config, dict):
-            logger.error("Field configuration in %s must be a mapping of field names to attributes.", config_file)
-            return
-
-        updated_fields = []
-        for field_name, field_data in field_config.items():
-            if not isinstance(field_data, dict):
-                logger.warning("Skipping field %s because its configuration is not a mapping.", field_name)
-                continue
-
-            missing_keys = [key for key in ("reference_station", "humus_pct", "soil_type") if key not in field_data]
-            if missing_keys:
-                logger.warning(
-                    "Skipping field %s because required keys are missing: %s",
-                    field_name,
-                    ", ".join(missing_keys),
-                )
-                continue
-
-            field_obj, updated = self.add_field(
-                name=field_name,
-                reference_station=field_data["reference_station"],
-                soil_type=field_data["soil_type"],
-                humus_pct=field_data["humus_pct"],
-                root_depth_cm=field_data.get("root_depth_cm", 30),
-                area_ha=field_data.get("area_ha"),
-                p_allowable=field_data.get("p_allowable", 0),
-            )
-            if updated:
-                updated_fields.append(field_obj.id)
-        return updated_fields
 
     def query_irrigation_events(
         self, field_name: str | None = None, date: datetime.date | None = None
