@@ -158,11 +158,7 @@ class IrrigDB:
                         return (field, updated)
                     else:
                         logger.info(f"Updated field {field.name}. Deleting existing water-balance cache")
-                        (
-                            session.query(models.WaterBalance)
-                            .filter(models.WaterBalance.field_id == field.id)
-                            .delete(synchronize_session=False)
-                        )
+                        deleted = self._clear_water_balance(session, field_id = field.id)
 
                 session.flush()  # ensure primary key is populated for new records
                 return (field, updated)
@@ -227,6 +223,7 @@ class IrrigDB:
                 existing = self._get_irrigation_events(session, field.id, date)
                 if existing:
                     event = existing[0]
+            old_field_id = event.field_id if event else None
 
             if event:
                 logger.debug("Updating irrigation event %s", event.id)
@@ -243,6 +240,10 @@ class IrrigDB:
                     amount=amount,
                 )
                 session.add(event)
+
+            self._clear_water_balance(session, field_id = field.id)
+            if old_field_id and old_field_id != field.id:
+                self._clear_water_balance(session, field_id=old_field_id)
 
             session.flush()
             # Refresh to ensure we have the ID available if we need to return it
@@ -369,26 +370,34 @@ class IrrigDB:
                 session.merge(models.WaterBalance(**record))
             return len(records)
 
+    def _clear_water_balance(self, session: Session, field_id: int):
+        query = session.query(models.WaterBalance).filter(models.WaterBalance.field_id == field_id)
+        deleted = query.delete(synchronize_session=False)
+        logger.info(f"Cleared {deleted} water balance rows for field {field_id}")
+        return deleted
+
     def clear_water_balance(self, field_ids: list[int] | None = None) -> int:
         """
         Delete water balance entries. If field_ids provided, only delete those.
         Returns number of rows deleted.
         """
-        try:
+
+        if field_ids is None:
             with self.session_scope() as session:
                 query = session.query(models.WaterBalance)
-                if field_ids:
-                    query = query.filter(models.WaterBalance.field_id.in_(field_ids))
                 deleted = query.delete(synchronize_session=False)
-                logger.info(
-                    "Cleared %s water balance rows%s",
-                    deleted,
-                    f" for fields {field_ids}" if field_ids else "",
-                )
+                logger.info(f"Cleared entire water balance cache: {deleted} rows.")
                 return deleted
-        except Exception:
-            logger.exception("Failed to clear water balance data")
-            return 0
+
+        if isinstance(field_ids, int):
+            field_ids = [field_ids]
+
+        deleted_total = 0
+        for field_id in field_ids:
+            with self.session_scope() as session:
+                deleted = self._clear_water_balance(session, field_id)
+                deleted_total += deleted
+        return deleted_total
 
     def delete_field(self, field_id: int) -> bool:
         with self.session_scope() as session:
