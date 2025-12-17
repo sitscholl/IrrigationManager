@@ -35,8 +35,9 @@ class WaterBalanceWorkflow:
         self.fields = [FieldHandler(field) for field in db.get_all_fields()]
 
         if len(self.fields) == 0:
-            logger.info('No fields configured in database. Terminating')
-            sys.exit(1)
+            logger.warning('No fields found in database.')
+            # logger.info('No fields configured in database. Terminating')
+            # sys.exit(1)
 
         meteo = MeteoHandler(config['meteo'])
         resampler = MeteoResampler(**config['resampling'])
@@ -53,11 +54,7 @@ class WaterBalanceWorkflow:
 
         logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields from {self.season_start} to {self.season_end}.')
 
-    def run(self, force_fields: list[int] | None = None):
-
-        ## Delete existing data if force
-        if force_fields is not None and len(force_fields) > 0:
-            self.db.clear_water_balance(force_fields)
+    def run(self):
 
         for field in self.fields:
 
