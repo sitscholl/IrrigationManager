@@ -156,6 +156,13 @@ class IrrigDB:
                     if not updated:
                         logger.debug("No changes for field %s; skipping update", name)
                         return (field, updated)
+                    else:
+                        logger.info(f"Updated field {field.name}. Deleting existing water-balance cache")
+                        (
+                            session.query(models.WaterBalance)
+                            .filter(models.WaterBalance.field_id == field.id)
+                            .delete(synchronize_session=False)
+                        )
 
                 session.flush()  # ensure primary key is populated for new records
                 return (field, updated)
