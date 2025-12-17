@@ -1,0 +1,55 @@
+general:
+    season_start: "01-04-2025"
+    season_end: "01-10-2025"
+
+meteo:
+    radiation_fallback_provider: province
+    radiation_fallback_station: 09700MS
+    api:
+        host: https://api-provider.url
+        query_template: query/?provider={provider}&station_id={station_id}&start_date={start_date:%Y-%m-%dT%H:%M:%SZ}&end_date={end_date:%Y-%m-%dT%H:%M:%SZ}
+
+resampling:
+    freq: D
+    min_count: 20
+
+evapotranspiration:
+    method: PenmanDaily
+    correction:
+        season_end: "01-10-2025"
+        periods: [
+            {"name": "Kc_ini", "value": 0.30, "start": "01-04-2025"},
+            {"name": "Kc_mid", "value": 1.10, "start": "01-06-2025"},
+            {"name": "Kc_end", "value": 0.65, "start": "01-07-2025"}
+        ]
+
+logging:
+    version: 1
+    disable_existing_loggers: false
+    formatters: 
+        standard:
+            format: "%(asctime)s - %(levelname)s - %(filename)s (%(process)d): %(message)s"
+            datefmt: "%Y-%m-%d %H:%M:%S"
+        email:
+            format: "%(message)s"
+            datefmt: "%Y-%m-%d %H:%M:%S"
+    handlers:
+        console:
+          class: logging.StreamHandler
+          formatter: standard
+          level: DEBUG
+          stream: ext://sys.stdout
+        # file:
+        #   class: logging.handlers.TimedRotatingFileHandler
+        #   level: INFO
+        #   formatter: standard
+        #   filename: config/logs/meteoservice.log
+        #   when: midnight
+        #   interval: 1
+        #   backupCount: 30  # Keep 30 days of logs
+        #   utc: false
+        #   encoding: utf8
+    loggers:
+        root:
+            handlers: [console]
+            level: DEBUG
