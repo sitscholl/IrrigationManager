@@ -1,80 +1,85 @@
 from nicegui import ui
 
-
-# Add CSS once
+# Enhanced CSS with Glassmorphism and better animations
 ui.add_head_html("""
 <style>
-    /* Base header link styling */
-    .header-link {
-        position: relative;
-        color: white;
+    .glass-header {
+        background: rgba(25, 118, 210, 0.85) !important; /* Primary color with transparency */
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .nav-link {
+        color: rgba(255, 255, 255, 0.8);
         text-decoration: none;
+        padding: 8px 12px;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        font-weight: 500;
         display: flex;
         align-items: center;
-        gap: 6px;
-        transition: color 0.25s ease;
+        gap: 8px;
     }
 
-    .header-link:hover {
-        color: #a0c4ff;
+    .nav-link:hover {
+        color: white;
+        background: rgba(255, 255, 255, 0.15);
     }
 
-    /* Hover underline animation */
-    .header-link::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        bottom: -4px;
-        width: 100%;
-        height: 2px;
-        background-color: #a0c4ff;
-        transform: scaleX(0);
-        transform-origin: left;
-        transition: transform 0.25s ease;
-    }
-    .header-link:hover::after {
-        transform: scaleX(1);
+    .nav-active {
+        color: white !important;
+        background: rgba(255, 255, 255, 0.25) !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
 
-    /* ACTIVE PAGE STYLE */
-    .active-link {
-        color: #a0c4ff !important;
-        font-weight: 600;
-    }
-
-    /* Persistent underline for active page */
-    .active-link::after {
-        transform: scaleX(1) !important;
-        background-color: #a0c4ff;
+    /* Subtle pulse animation for icons on active links */
+    .nav-active i {
+        transform: scale(1.1);
     }
 </style>
-""", shared = True)
+""", shared=True)
 
-
-def add_header() -> ui.button:
-    """Create the page header."""
-
+def add_header():
     menu_items = {
         'Dashboard': ('/', 'dashboard'),
         'Anlagen': ('/fields', 'agriculture'),
         'Bewässerung': ('/irrigation', 'water_drop'),
     }
 
-    current = ui.context.client.page.path  # <-- detects the current page
+    current_path = ui.context.client.page.path
 
-    with ui.header().classes(
-        'items-center justify-center duration-200 p-0 px-4 no-wrap h-10'
-    ).style('box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1)'):
+    # --- THE HEADER ---
+    with ui.header().classes('glass-header items-center px-6 h-16'):
+        
+        # Brand / Logo Section
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('opacity', size='2rem').classes('text-white')
+            ui.label('IrrigSmart').classes('text-xl font-bold text-white tracking-tight')
 
-        with ui.row().classes('max-[1050px]:hidden gap-x-10'):
-            for title_, (target, icon) in menu_items.items():
+        ui.element('q-space') # Pushes nav to the right
 
-                # Determine if this link is the active route
-                link_classes = 'header-link text-lg'
-                if current == target:
-                    link_classes += ' active-link'
+        # Desktop Navigation (Hidden on small screens)
+        with ui.row().classes('max-md:hidden gap-x-2'):
+            for title, (path, icon) in menu_items.items():
+                is_active = current_path == path
+                
+                with ui.link(target=path).classes(f'nav-link {"nav-active" if is_active else ""}'):
+                    ui.icon(icon)
+                    ui.label(title)
 
-                # Build link with icon + label
-                with ui.link(target=target).classes(link_classes):
-                    ui.icon(icon).classes('text-lg')
-                    ui.label(title_)
+        # Mobile Menu Button (Shown only on small screens)
+        with ui.button(icon='menu', color='white').props('flat round').classes('md:hidden'):
+            with ui.menu().classes('w-48'):
+                for title, (path, icon) in menu_items.items():
+                    # Mobile menu items
+                    ui.menu_item(title, on_click=lambda p=path: ui.navigate.to(p)) \
+                        .classes('font-medium')
+
+    # Optional: Side Drawer for a more "App-like" mobile feel 
+    # (Uncomment below if you prefer a drawer over a simple menu)
+    # left_drawer = ui.left_drawer(value=False).classes('bg-slate-50')
+    # with left_drawer:
+    #     ui.label('Navigation').classes('text-xs font-bold text-slate-400 p-4 uppercase')
+    #     for title, (path, icon) in menu_items.items():
+    #         ui.item(title, on_click=lambda p=path: ui.navigate.to(p)).classes('p-4')
