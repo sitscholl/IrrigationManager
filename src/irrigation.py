@@ -1,7 +1,6 @@
 import pandas as pd
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from src.database.models import Irrigation
 
