@@ -90,19 +90,16 @@ class WaterBalanceWorkflow:
     def run(self):
 
         for field in self.fields:
-
             field_season_start = self.db.first_irrigation_event(field.id, self.year)
-
             if field_season_start is None:
                 logger.info(f"No irrigation events found for field {field.name}. Skipping")
                 continue
 
-            ## Check existing data
-            latest_balance = self.db.latest_water_balance(field.id)
-            # Normalize start_ts to UTC Timestamp
+            # 1. Setup Time Ranges
             season_start_ts = pd.Timestamp(field_season_start.date, tz="UTC")
+            latest_balance = self.db.latest_water_balance(field.id)
+            
             if latest_balance:
-                # Assuming latest_balance.date is a date object or ISO string
                 next_ts = pd.Timestamp(latest_balance.date, tz="UTC") + timedelta(days=1)
                 start_ts = max(season_start_ts, next_ts)
                 initial_storage = latest_balance.soil_storage
@@ -110,54 +107,44 @@ class WaterBalanceWorkflow:
                 start_ts = season_start_ts
                 initial_storage = None
 
-            period_end = min(pd.Timestamp.now(tz = self.tz).tz_convert('UTC'), self.season_end_utc)
+            period_end = min(pd.Timestamp.now(tz=self.tz).tz_convert('UTC'), self.season_end_utc)
 
+            # 2. Logic Branching
             if start_ts >= period_end:
-                logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
+                logger.info(f"No new data to compute for {field.name}.")
+                # Plot existing history
                 self._plot_cached_water_balance(field, season_start_ts.date())
             else:
                 try:
-                    logger.info(f"Starting calculation from {start_ts} for field {field.name}")
-
-                    ## Query Meteo Data
-                    reference_station = field.reference_station
+                    logger.info(f"Calculating {start_ts.date()} to {period_end.date()} for {field.name}")
+                    
                     station = self.runtime_context.meteo_handler.query(
-                        provider = "SBR",
-                        station_id = reference_station,
-                        start = start_ts,
-                        end = period_end,
-                        resampler = self.runtime_context.resampler
+                        provider="SBR", station_id=field.reference_station,
+                        start=start_ts, end=period_end,
+                        resampler=self.runtime_context.resampler
                     )
 
                     if station is None:
-                        logger.info(f"No meteo data available from {start_ts} for field {field.name}.")
+                        logger.warning(f"Meteo query returned None for {field.name}.")
                         self._plot_cached_water_balance(field, season_start_ts.date())
                         continue
 
-                    ## Calculate evapotranspiration
-                    station.data = station.data.join(self.runtime_context.et_calculator.calculate(station, correct = True))
-
-                    ## Calculate water balance
+                    # ET and Balance Calculation
+                    station.data = station.data.join(self.runtime_context.et_calculator.calculate(station, correct=True))
                     field_capacity = field.get_field_capacity()
-                    field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name, year = self.year))
-
-                    field_wb = field.calculate_water_balance(
-                        station.data, field_irrigation, initial_storage=initial_storage
-                        )
+                    field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name, year=self.year))
+                    field_wb = field.calculate_water_balance(station.data, field_irrigation, initial_storage=initial_storage)
                     
-                    ## Persist water balance
-                    try:
-                        updated_rows = self.db.add_water_balance(field_wb, field_id = field.id)
-                    except Exception as e:
-                        logger.error(f"Error saving water balance for field {field.name}: {e}")
-
-                    ## Plot
-                    self.plot.plot_waterbalance(field_wb, field_name=field.name)
-
-                    logger.info(f"Calculated water-balance for field {field.name}")
-                except Exception as e:
-                    logger.error(f"Error calculating water balance for field {field.name}: {e}", exc_info = True)
+                    # Persist
+                    self.db.add_water_balance(field_wb, field_id=field.id)
+                    
+                    # ALWAYS plot from the DB after a calculation to show the FULL season
                     self._plot_cached_water_balance(field, season_start_ts.date())
-                    continue
+                    
+                    logger.info(f"Successfully updated water-balance for {field.name}")
 
+                except Exception as e:
+                    logger.error(f"Calculation failed for {field.name}: {e}", exc_info=True)
+                    # Fallback to whatever history we have
+                    self._plot_cached_water_balance(field, season_start_ts.date())
             
