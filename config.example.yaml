@@ -1,7 +1,3 @@
-general:
-    season_start: "01-04-2025"
-    season_end: "01-10-2025"
-
 meteo:
     radiation_fallback_provider: province
     radiation_fallback_station: 09700MS

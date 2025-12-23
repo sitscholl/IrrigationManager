@@ -25,8 +25,8 @@ class WaterBalanceWorkflow:
 
     def __init__(self, config, db):
         self.config = config
-        self.season_start = pd.to_datetime(config['general']['season_start'], dayfirst = True)
-        self.season_end = pd.to_datetime(config['general']['season_end'], dayfirst = True)
+        self.year = datetime.now().year
+        self.season_end = datetime(self.year, 12, 31)
         self.db = db
 
         if ET0Calculator.get_calculator_by_name(config['evapotranspiration']['method']) is None:
@@ -52,22 +52,28 @@ class WaterBalanceWorkflow:
 
         self.plot = BasePlot().create_base(subpanels=0, vertical_spacing=.1)
 
-        logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields from {self.season_start} to {self.season_end}.')
+        logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields for year {self.year}.')
 
     def run(self):
 
         for field in self.fields:
 
+            field_season_start = self.db.first_irrigation_event(field.id, self.year)
+
+            if field_season_start is None:
+                logger.info(f"No irrigation events found for field {field.name}. Skipping")
+                continue
+
             ## Check existing data
             latest_balance = self.db.latest_water_balance(field.id)
-            next_date = pd.to_datetime(latest_balance.date) + timedelta(days=1) if latest_balance else self.season_start
-            start_date = max(self.season_start, next_date)
+            next_date = pd.to_datetime(latest_balance.date) + timedelta(days=1) if latest_balance else field_season_start.date
+            start_date = max(field_season_start.date, next_date)
             initial_storage = latest_balance.soil_storage if latest_balance else None
             period_end = min(pd.Timestamp.today(), self.season_end)
 
             if start_date >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
-                wb_persisted = self.db.query_water_balance(field_id = field.id, start = self.season_start, end = self.season_end)
+                wb_persisted = self.db.query_water_balance(field_id = field.id, start = field_season_start.date, end = self.season_end)
                 if wb_persisted:
                     wb_df = pd.DataFrame(
                         [
@@ -111,7 +117,7 @@ class WaterBalanceWorkflow:
 
                     ## Calculate water balance
                     field_capacity = field.get_field_capacity()
-                    field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name))
+                    field_irrigation = FieldIrrigation.from_list(self.db.query_irrigation_events(field.name, year = self.year))
 
                     field_wb = field.calculate_water_balance(
                         station.data, field_irrigation, initial_storage=initial_storage

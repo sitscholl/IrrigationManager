@@ -1,3 +1,4 @@
+from datetime import datetime
 import datetime
 import logging
 from contextlib import contextmanager
@@ -63,15 +64,35 @@ class IrrigDB:
             .one_or_none()
         )
 
-    def _get_irrigation_events(
-        self, session: Session, field_id: int | None = None, date: datetime.date | None = None
+    def _get_first_irrigation_event(
+        self, session: Session, field_id: int, year: int
     ) -> Optional[models.Irrigation]:
+        return (
+            session.query(models.Irrigation)
+            .filter(models.Irrigation.field_id == field_id)
+            .filter(models.Irrigation.date >= datetime.date(year, 1, 1), models.Irrigation.date < datetime.date(year+1, 1, 1))
+            .order_by(models.Irrigation.date.asc())
+            .limit(1)
+            .one_or_none()
+        )
+
+    def _get_irrigation_events(
+        self, session: Session, field_id: int | None = None, date: datetime.date | None = None, year: int | None = None
+    ) -> Optional[models.Irrigation]:
+
+        if date is not None and year is not None:
+            logger.warning("Both date and year passed to query_irrigation_events. Ignoring year")
+            year = None
+
         query = session.query(models.Irrigation)
         if field_id is not None:
             query = query.filter(models.Irrigation.field_id == field_id)
 
         if date is not None:
             query = query.filter(models.Irrigation.date == date)
+
+        if year is not None:
+            query = query.filter(models.Irrigation.date >= datetime.date(year, 1, 1), models.Irrigation.date < datetime.date(year+1, 1, 1))
 
         return query.all()
 
@@ -167,7 +188,7 @@ class IrrigDB:
             return (None, updated)
 
     def query_irrigation_events(
-        self, field_name: str | None = None, date: datetime.date | None = None
+        self, field_name: str | None = None, date: datetime.date | None = None, year: int | None = None
     ) -> Optional[models.Irrigation]:
         """
         Retrieve an irrigation event by field name and (optional) date.
@@ -190,7 +211,7 @@ class IrrigDB:
             else:
                 field_id = None
 
-            return self._get_irrigation_events(session, field_id, date)
+            return self._get_irrigation_events(session, field_id, date, year)
 
     def add_irrigation_event(
         self,
@@ -288,6 +309,10 @@ class IrrigDB:
         """
         with self.session_scope() as session:
             return self._get_latest_water_balance(session, field_id)
+
+    def first_irrigation_event(self, field_id: int, year: int):
+        with self.session_scope() as session:
+            return self._get_first_irrigation_event(session, field_id, year)
 
     def add_water_balance(self, water_balance: pd.DataFrame, field_id: int | None = None):
         """
@@ -413,6 +438,7 @@ class IrrigDB:
             if not event:
                 return False
             session.delete(event)
+            self._clear_water_balance(session, field_id = event.field_id)
             return True
 
     def close(self) -> None:
