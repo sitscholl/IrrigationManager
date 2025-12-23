@@ -1,5 +1,3 @@
-import asyncio
-
 import logging
 import logging.config
 from pathlib import Path
@@ -10,6 +8,7 @@ from nicegui import ui, app
 from src.config import load_config
 from src.frontend.dashboard import get_fig
 from src.frontend import deps #initialize startup/shutdow hooks
+from src.scheduler import IrrigationScheduler
 
 config = load_config('config/config.yaml')
 logging.config.dictConfig(config['logging'])
@@ -19,20 +18,15 @@ for path in Path('src/frontend').glob('*.py'):
         continue
     import_module(f'src.frontend.{path.stem}')
 
-async def refresh_loop(interval_seconds: int = 3600):
-    while True:
-        await get_fig(force=True)  # rebuild cache
-        await asyncio.sleep(interval_seconds)
+# 1. Define the callback (wrapped to ensure force=True)
+async def scheduled_refresh():
+    await get_fig(force=True)
 
-async def start_scheduler():
-    # prevent multiple loops if reload is on
-    if getattr(start_scheduler, '_started', False):
-        return
-    start_scheduler._started = True
-    asyncio.create_task(refresh_loop())
+# 2. Instantiate the scheduler (e.g., every 1 hour)
+scheduler = IrrigationScheduler(callback=scheduled_refresh, **config.get('scheduler', {}))
 
-app.on_startup(start_scheduler)
-ui.run(
-    title='Irrigation Manager',
-    reload=True,
-)
+# 3. Use standard NiceGUI lifecycle hooks
+app.on_startup(lambda: scheduler.start())
+app.on_shutdown(lambda: scheduler.stop())
+
+ui.run(title='Irrigation Manager', reload=True)
