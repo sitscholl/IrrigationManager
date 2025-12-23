@@ -2,8 +2,8 @@ import pandas as pd
 
 from dataclasses import dataclass
 import logging
-import sys
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from .field import FieldHandler
 from .irrigation import FieldIrrigation
@@ -25,8 +25,15 @@ class WaterBalanceWorkflow:
 
     def __init__(self, config, db):
         self.config = config
-        self.year = datetime.now().year
-        self.season_end = datetime(self.year, 12, 31)
+        tz_name = config.get("general", {}).get("timezone", "UTC")
+        self.tz = ZoneInfo(tz_name)
+
+        local_now = datetime.now(self.tz)
+        self.year = local_now.year
+
+        self.season_end_local = datetime(self.year + 1, 1, 1, tzinfo=self.tz)  # end-exclusive
+        self.season_end_utc = self.season_end_local.astimezone(ZoneInfo("UTC"))
+
         self.db = db
 
         if ET0Calculator.get_calculator_by_name(config['evapotranspiration']['method']) is None:
@@ -67,13 +74,18 @@ class WaterBalanceWorkflow:
             ## Check existing data
             latest_balance = self.db.latest_water_balance(field.id)
             next_date = pd.to_datetime(latest_balance.date) + timedelta(days=1) if latest_balance else field_season_start.date
-            start_date = max(field_season_start.date, next_date)
+            start_date = max(field_season_start.date, next_date.date() if hasattr(next_date, "date") else next_date)
+            start_ts = pd.Timestamp(start_date, tz="UTC")  #make timezone aware for meteo_handler.query() and for comparison with period_end
             initial_storage = latest_balance.soil_storage if latest_balance else None
-            period_end = min(pd.Timestamp.today(), self.season_end)
+            period_end = min(pd.Timestamp.now(tz = self.tz).tz_convert('UTC'), self.season_end_utc)
 
-            if start_date >= period_end:
+            if start_ts >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
-                wb_persisted = self.db.query_water_balance(field_id = field.id, start = field_season_start.date, end = self.season_end)
+                wb_persisted = self.db.query_water_balance(
+                    field_id = field.id, 
+                    start = field_season_start.date, 
+                    end = (self.season_end_local - timedelta(days=1)).date() #subtract one day because end-exclusive
+                    )
                 if wb_persisted:
                     wb_df = pd.DataFrame(
                         [
@@ -96,20 +108,20 @@ class WaterBalanceWorkflow:
                     logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
             else:
                 try:
-                    logger.info(f"Starting calculation from {start_date.date()} for field {field.name}")
+                    logger.info(f"Starting calculation from {start_date} for field {field.name}")
 
                     ## Query Meteo Data
                     reference_station = field.reference_station
                     station = self.runtime_context.meteo_handler.query(
                         provider = "SBR",
                         station_id = reference_station,
-                        start = start_date,
+                        start = start_ts,
                         end = period_end,
                         resampler = self.runtime_context.resampler
                     )
 
                     if station is None:
-                        logger.info(f"No meteo data available from {start_date.date()} for field {field.name}; skipping.")
+                        logger.info(f"No meteo data available from {start_date} for field {field.name}; skipping.")
                         continue
 
                     ## Calculate evapotranspiration

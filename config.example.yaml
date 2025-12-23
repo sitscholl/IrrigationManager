@@ -1,3 +1,6 @@
+general:
+  timezone: Europe/Rome
+
 meteo:
     radiation_fallback_provider: province
     radiation_fallback_station: 09700MS
