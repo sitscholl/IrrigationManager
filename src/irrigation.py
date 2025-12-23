@@ -1,7 +1,7 @@
 import pandas as pd
-from pandas.api.types import is_datetime64_any_dtype
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from src.database.models import Irrigation
 
@@ -14,11 +14,11 @@ class FieldIrrigation:
 
         dates_re = []
         for date in dates:
-            if not isinstance(date, datetime):
-                try:
-                    date = pd.to_datetime(date)
-                except Exception as e:
-                    raise ValueError(f'Error transforming input dates to datetime for FieldIrrigation: {e}')
+            date = pd.to_datetime(date)
+            if date.tzinfo is None:
+                date = date.tz_localize("UTC")
+            else:
+                date = date.tz_convert("UTC")
             dates_re.append(date)
 
         self.field_id = field_id

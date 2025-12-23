@@ -73,19 +73,23 @@ class WaterBalanceWorkflow:
 
             ## Check existing data
             latest_balance = self.db.latest_water_balance(field.id)
-            next_date = pd.to_datetime(latest_balance.date) + timedelta(days=1) if latest_balance else field_season_start.date
-            start_date = max(field_season_start.date, next_date.date() if hasattr(next_date, "date") else next_date)
-            start_ts = pd.Timestamp(start_date, tz="UTC")  #make timezone aware for meteo_handler.query() and for comparison with period_end
-            initial_storage = latest_balance.soil_storage if latest_balance else None
+            # Normalize start_ts to UTC Timestamp
+            season_start_ts = pd.Timestamp(field_season_start.date, tz="UTC")
+            if latest_balance:
+                # Assuming latest_balance.date is a date object or ISO string
+                next_ts = pd.Timestamp(latest_balance.date, tz="UTC") + timedelta(days=1)
+                start_ts = max(season_start_ts, next_ts)
+                initial_storage = latest_balance.soil_storage
+            else:
+                start_ts = season_start_ts
+                initial_storage = None
+
             period_end = min(pd.Timestamp.now(tz = self.tz).tz_convert('UTC'), self.season_end_utc)
 
             if start_ts >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
-                wb_persisted = self.db.query_water_balance(
-                    field_id = field.id, 
-                    start = field_season_start.date, 
-                    end = (self.season_end_local - timedelta(days=1)).date() #subtract one day because end-exclusive
-                    )
+                end_date = (self.season_end_utc - timedelta(days=1)).date()
+                wb_persisted = self.db.query_water_balance(field.id, season_start_ts.date(), end_date)
                 if wb_persisted:
                     wb_df = pd.DataFrame(
                         [
@@ -98,7 +102,7 @@ class WaterBalanceWorkflow:
                             for rec in wb_persisted
                         ]
                     )
-                    wb_df["date"] = pd.to_datetime(wb_df["date"])
+                    wb_df["date"] = pd.to_datetime(wb_df["date"]).dt.tz_localize("UTC")
                     wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
                     wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
                     wb_df = wb_df.set_index("date").sort_index()
@@ -108,7 +112,7 @@ class WaterBalanceWorkflow:
                     logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
             else:
                 try:
-                    logger.info(f"Starting calculation from {start_date} for field {field.name}")
+                    logger.info(f"Starting calculation from {start_ts} for field {field.name}")
 
                     ## Query Meteo Data
                     reference_station = field.reference_station
@@ -121,7 +125,7 @@ class WaterBalanceWorkflow:
                     )
 
                     if station is None:
-                        logger.info(f"No meteo data available from {start_date} for field {field.name}; skipping.")
+                        logger.info(f"No meteo data available from {start_ts} for field {field.name}; skipping.")
                         continue
 
                     ## Calculate evapotranspiration
