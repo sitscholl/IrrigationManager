@@ -61,6 +61,32 @@ class WaterBalanceWorkflow:
 
         logger.info(f'Initialized WaterBalanceWorkflow with {len(self.fields)} fields for year {self.year}.')
 
+    def _plot_cached_water_balance(self, field, start_date):
+        try:
+            end_date = (self.season_end_utc - timedelta(days=1)).date()
+            wb_persisted = self.db.query_water_balance(field_id = field.id, start = start_date, end = end_date)
+            if wb_persisted:
+                wb_df = pd.DataFrame(
+                    [
+                        {
+                            "date": rec.date,
+                            "soil_storage": rec.soil_storage,
+                            "irrigation": getattr(rec, "irrigation", 0.0),
+                            "precipitation": getattr(rec, "precipitation", 0.0),
+                        }
+                        for rec in wb_persisted
+                    ]
+                )
+                wb_df["date"] = pd.to_datetime(wb_df["date"]).dt.tz_localize("UTC")
+                wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
+                wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
+                wb_df = wb_df.set_index("date").sort_index()
+                self.plot.plot_waterbalance(wb_df, field_name=field.name)
+            else:
+                logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
+        except Exception as e:
+            logger.error(f"Error plotting cached water balance for field {field.name}: {e}")
+
     def run(self):
 
         for field in self.fields:
@@ -88,28 +114,7 @@ class WaterBalanceWorkflow:
 
             if start_ts >= period_end:
                 logger.info(f"No new period to compute for field {field.name}. Latest date in DB: {latest_balance.date if latest_balance else 'none'}.")
-                end_date = (self.season_end_utc - timedelta(days=1)).date()
-                wb_persisted = self.db.query_water_balance(field.id, season_start_ts.date(), end_date)
-                if wb_persisted:
-                    wb_df = pd.DataFrame(
-                        [
-                            {
-                                "date": rec.date,
-                                "soil_storage": rec.soil_storage,
-                                "irrigation": getattr(rec, "irrigation", 0.0),
-                                "precipitation": getattr(rec, "precipitation", 0.0),
-                            }
-                            for rec in wb_persisted
-                        ]
-                    )
-                    wb_df["date"] = pd.to_datetime(wb_df["date"]).dt.tz_localize("UTC")
-                    wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
-                    wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
-                    wb_df = wb_df.set_index("date").sort_index()
-                    self.plot.plot_waterbalance(wb_df, field_name=field.name)
-
-                else:
-                    logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
+                self._plot_cached_water_balance(field, season_start_ts.date())
             else:
                 try:
                     logger.info(f"Starting calculation from {start_ts} for field {field.name}")
@@ -125,7 +130,8 @@ class WaterBalanceWorkflow:
                     )
 
                     if station is None:
-                        logger.info(f"No meteo data available from {start_ts} for field {field.name}; skipping.")
+                        logger.info(f"No meteo data available from {start_ts} for field {field.name}.")
+                        self._plot_cached_water_balance(field, season_start_ts.date())
                         continue
 
                     ## Calculate evapotranspiration
@@ -151,6 +157,7 @@ class WaterBalanceWorkflow:
                     logger.info(f"Calculated water-balance for field {field.name}")
                 except Exception as e:
                     logger.error(f"Error calculating water balance for field {field.name}: {e}", exc_info = True)
+                    self._plot_cached_water_balance(field, season_start_ts.date())
                     continue
 
             
