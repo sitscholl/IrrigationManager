@@ -45,7 +45,7 @@ async def get_latest_water_balance(fields, db):
         wb_field = db.latest_water_balance(field.id)
         if wb_field:
             data.append({
-                'Anlage': wb_field.name,
+                'Anlage': field.name,
                 'Datum': wb_field.date.strftime('%Y-%m-%d') if wb_field.date else '',
                 'Wasserbilanz': f"{wb_field.soil_storage:.2f} mm"
             })
