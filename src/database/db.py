@@ -43,10 +43,30 @@ class IrrigDB:
         finally:
             session.close()
 
-    def _get_field_by_name(self, session: Session, name: str) -> Optional[models.Field]:
+    def _query_field(self, session: Session, name: str | None = None, id: int | None = None) -> Optional[models.Field]:
+
+        if name is None and id is None:
+            raise ValueError('Cannot query field when id and name are both None')
+        if name is not None and id is not None:
+            raise ValueError('Cannot query field when both id and name are provided')
+
+        if name is not None:
+            return (
+                session.query(models.Field)
+                .filter(models.Field.name == name)
+                .one_or_none()
+            )
+        elif id is not None:
+            return (
+                session.query(models.Field)
+                .filter(models.Field.id == id)
+                .one_or_none()
+            )
+
+    def _get_field_by_id(self, session: Session, id: int) -> Optional[models.Field]:
         return (
             session.query(models.Field)
-            .filter(models.Field.name == name)
+            .filter(models.Field.id == id)
             .one_or_none()
         )
 
@@ -106,12 +126,17 @@ class IrrigDB:
             )
         return fields
 
-    def query_field(self, name: str) -> Optional[models.Field]:
+    def query_field(self, name: str | None = None, id: int | None = None) -> Optional[models.Field]:
         """
-        Retrieve a field by its unique name.
+        Retrieve a field by its unique name or its id.
         """
+        if name is None and id is None:
+            raise ValueError('Cannot query field when id and name are both None')
+        if name is not None and id is not None:
+            raise ValueError('Cannot query field when both id and name are provided')
+
         with self.session_scope() as session:
-            return self._get_field_by_name(session, name)
+            return self._query_field(session, name = name, id = id)
 
     def add_field(
         self,
@@ -137,7 +162,7 @@ class IrrigDB:
         updated = False
         try:
             with self.session_scope() as session:
-                field = self._get_field_by_name(session, name)
+                field = self._query_field(session, name = name)
 
                 if field is None:
                     logger.debug("Adding new field %s to database", name)
@@ -197,7 +222,7 @@ class IrrigDB:
 
         with self.session_scope() as session:
             if field_name is not None:
-                field = self._get_field_by_name(session, field_name)
+                field = self._query_field(session, name = field_name)
                 if field is None:
                     logger.warning(
                         "Field %s does not exist. Cannot query irrigation event",
@@ -223,7 +248,7 @@ class IrrigDB:
             date = pd.to_datetime(date).date()
 
         with self.session_scope() as session:
-            field = self._get_field_by_name(session, field_name)
+            field = self._query_field(session, name = field_name)
             if field is None:
                 raise ValueError(f"Field '{field_name}' not found")
 
@@ -283,7 +308,7 @@ class IrrigDB:
             query = session.query(models.WaterBalance)
 
             if field_name is not None:
-                field = self._get_field_by_name(session, field_name)
+                field = self._query_field(session, name = field_name)
                 if field is None:
                     logger.warning("Field %s does not exist. Cannot query water balance", field_name)
                     return []
