@@ -54,27 +54,23 @@ async def get_latest_water_balance(fields, db):
 
 @ui.refreshable
 async def render_dashboard_content(db, fields, force: bool = False):
-    """This function contains the parts of the UI that need to change when data refreshes."""
-    
-    # 1. Start fetching data (Table and Chart)
-    # We can run these in parallel to save time
-    df_task = get_latest_water_balance(fields, db)
-    fig_task = get_fig(force=force)
-    
-    # Show a loading placeholder while waiting
     with ui.column().classes('w-full items-center q-pa-xl') as placeholder:
         ui.spinner(size='lg')
         ui.label('Updating data...')
 
+    # Run the heavy tasks
+    df_task = get_latest_water_balance(fields, db)
+    fig_task = get_fig(force=force)
+    
     df_balance, fig = await asyncio.gather(df_task, fig_task)
-    placeholder.delete() # Remove the spinner
+    
+    placeholder.delete() # Remove spinner
 
-    # 2. Render Chart Card
+    # Render actual content
     with ui.card().classes("w-full shadow-lg rounded-xl overflow-hidden"):
         ui.label('Water Balance Trend').classes("text-lg font-semibold q-pa-md")
         ui.plotly(fig).classes('w-full h-[500px]')
 
-    # 3. Render Table Card
     with ui.card().classes("w-full shadow-lg rounded-xl q-pa-none"):
         ui.label('Latest Readings').classes("text-lg font-semibold q-pa-md")
         if not df_balance.empty:
@@ -95,10 +91,16 @@ async def dashboard():
                 ui.label('Field Overview').classes("text-3xl font-bold text-slate-800")
                 ui.label('Real-time water balance monitoring').classes("text-slate-500")
             
-            # The button now just triggers the refreshable function
+            # Use the function name directly to refresh
             ui.button('Refresh Data', icon='refresh', 
                       on_click=lambda: render_dashboard_content.refresh(force=True)) \
                 .props('outline')
 
-        # Dynamic Section (Chart and Table)
-        await render_dashboard_content(db, fields)
+        # 1. "Place" the refreshable area in the UI.
+        # Since the function is async, calling it without 'await' inside a 
+        # NiceGUI context registers it as a refreshable target.
+        render_dashboard_content(db, fields)
+
+    # 2. Trigger the actual data load after the page shell is sent to the browser.
+    # This prevents the 3.0s timeout warning.
+    ui.timer(0.1, lambda: render_dashboard_content.refresh(), once=True)
