@@ -29,4 +29,4 @@ scheduler = IrrigationScheduler(callback=scheduled_refresh, **config.get('schedu
 app.on_startup(lambda: scheduler.start())
 app.on_shutdown(lambda: scheduler.stop())
 
-ui.run(title='Irrigation Manager', reload=True)
+ui.run(title='Irrigation Manager', host='0.0.0.0', port=8080, reload=False)
