@@ -81,7 +81,7 @@ class WaterBalanceWorkflow:
                 wb_df["irrigation"] = wb_df["irrigation"].fillna(0.0)
                 wb_df["precipitation"] = wb_df["precipitation"].fillna(0.0)
                 wb_df = wb_df.set_index("date").sort_index()
-                self.plot.plot_waterbalance(wb_df, field_name=field.name)
+                self.plot.plot_waterbalance(wb_df, field_name=field.name, hover_units = 'mm')
             else:
                 logger.info(f"No persisted water balance found for field {field.name}; nothing to plot.")
         except Exception as e:

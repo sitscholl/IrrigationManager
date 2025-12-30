@@ -172,9 +172,9 @@ class BasePlot:
         assert self.fig is not None, "Call create_base() first."
 
         mode = "lines+markers" if markers else "lines"
-        hovertemplate = "%{x}<br>%{y}"
+        hovertemplate = "%{y:.2f}"
         if hover_units:
-            hovertemplate = f"%{{x}}<br>%{{y}} {hover_units}"
+            hovertemplate = hovertemplate + f"{hover_units}"
         if hover_name:
             hovertemplate = f"{hover_name}<br>" + hovertemplate
 
@@ -270,7 +270,7 @@ class BasePlot:
         return self
 
     def plot_waterbalance(
-        self, waterbalance_data: pd.DataFrame, field_name: str, precip_limit: Number = 5,
+        self, waterbalance_data: pd.DataFrame, field_name: str, precip_limit: Number = 5, **kwargs
         ):
         
         if self.fig is None:
@@ -298,7 +298,7 @@ class BasePlot:
         wb["irrigation"] = wb["irrigation"].fillna(0.0)
         wb["precipitation"] = wb["precipitation"].fillna(0.0)
 
-        self.plot_line(wb.index, wb["soil_storage"], name=field_name)
+        self.plot_line(wb.index, wb["soil_storage"], name=field_name, **kwargs)
         
         self.plot_event_markers(
             wb.index,
