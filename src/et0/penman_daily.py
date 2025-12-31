@@ -2,6 +2,7 @@ from pyet import pm_fao56
 import pandas as pd
 
 from typing import TYPE_CHECKING
+import logging
 
 from .base import ET0Calculator
 
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
     from ..et_correction import ETCorrection
     from ..meteo import Station
 
+logger = logging.getLogger(__name__)
 
 class PenmanDailyCalculator(ET0Calculator):
 
@@ -21,8 +23,17 @@ class PenmanDailyCalculator(ET0Calculator):
 
     def _validate_data(self, data):
 
-        if data.index.dtype != 'datetime64[ns]' and pd.infer_freq(data.index) != 'D':
-            raise ValueError(f"Index of input data has to be of type datetime with daily frequency. Got {data.index.dtype} and {pd.infer_freq(data.index)}")
+        if data.index.dtype != 'datetime64[ns]':
+            raise ValueError(f"Index of input data has to be of type datetime. Got {data.index.dtype}")
+        else:
+            freq = None
+            try:
+                freq = pd.infer_freq(data.index) 
+            except Exception as e:
+                logger.warning(f'Failed to determine input datetime frequency for PenmanDailyCalculator validation with error: {e}')
+            
+            if freq is not None and freq != 'D':
+                raise ValueError(f"Index of input data has to at daily frequency. Got {freq}")
 
     def calculate(self, station: "Station", correct: bool = True):
 
