@@ -22,18 +22,22 @@ class PenmanDailyCalculator(ET0Calculator):
         return "PenmanDaily"
 
     def _validate_data(self, data):
+        if not isinstance(data.index, pd.DatetimeIndex):
+            raise ValueError(
+                f"Index of input data has to be of type datetime. Got {data.index.dtype}"
+            )
 
-        if data.index.dtype != 'datetime64[ns]':
-            raise ValueError(f"Index of input data has to be of type datetime. Got {data.index.dtype}")
-        else:
-            freq = None
-            try:
-                freq = pd.infer_freq(data.index) 
-            except Exception as e:
-                logger.warning(f'Failed to determine input datetime frequency for PenmanDailyCalculator validation with error: {e}')
-            
-            if freq is not None and freq != 'D':
-                raise ValueError(f"Index of input data has to at daily frequency. Got {freq}")
+        freq = None
+        try:
+            freq = pd.infer_freq(data.index)
+        except Exception as e:
+            logger.warning(
+                "Failed to determine input datetime frequency for PenmanDailyCalculator "
+                f"validation with error: {e}"
+            )
+
+        if freq is not None and freq != "D":
+            raise ValueError(f"Index of input data has to at daily frequency. Got {freq}")
 
     def calculate(self, station: "Station", correct: bool = True):
 
