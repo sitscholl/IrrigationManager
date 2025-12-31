@@ -43,7 +43,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8080
 
 # Use the non-root user to run our application
-USER nonroot
+# USER nonroot
 
 # Use `/app` as the working directory
 WORKDIR /app
