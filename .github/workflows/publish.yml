@@ -2,7 +2,7 @@ name: Build and Publish Docker image
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master ]
     tags: [ 'v*' ]
   workflow_dispatch:
 
@@ -33,8 +33,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Tag as latest when on main
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag as latest when on master
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
             # Use version tag if available (v1.2.0)
             type=ref,event=tag
             # Always include SHA tag for traceability
