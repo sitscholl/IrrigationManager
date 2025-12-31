@@ -1,0 +1,15 @@
+services:
+  meteo-service:
+    image: ghcr.io/sitscholl/irrigationmanager:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+    restart: unless-stopped
+    container_name: irrigation-manager
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 300s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
