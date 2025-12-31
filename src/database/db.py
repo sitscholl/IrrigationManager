@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class IrrigDB:
-    def __init__(self, engine_url: str = 'sqlite:///database.db', **engine_kwargs) -> None:
+    def __init__(self, path: str = 'sqlite:///database.db', **engine_kwargs) -> None:
         """
         Create a database engine and initialise ORM metadata.
         """
-        self.engine = create_engine(engine_url, future=True, **engine_kwargs)
+        self.engine = create_engine(path, future=True, **engine_kwargs)
         models.Base.metadata.create_all(self.engine)
         self._session_factory = sessionmaker(
             bind=self.engine,
