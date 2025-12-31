@@ -22,6 +22,9 @@ evapotranspiration:
             {"name": "Kc_end", "value": 0.65, "start": "01-07-2025"}
         ]
 
+database:
+  path: "sqlite:///config/database.db"
+
 scheduler:
     time_of_day: 05:00
 
